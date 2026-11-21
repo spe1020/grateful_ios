@@ -101,6 +101,34 @@ final class WebInteropTests: XCTestCase {
         XCTAssertTrue(EntryDeletion.tombstones(from: [f.deletion], owner: String(repeating: "b", count: 64)).isEmpty)
     }
 
+    /// L1: a version whose created_at equals the deletion's is deleted (web uses `<=`).
+    func testDeletionAtTheSameSecondDeletesTheEntry() throws {
+        let entry = try XCTUnwrap(f.entries.first { $0.name == "public_single" }?.event)
+        let d = try XCTUnwrap(entry.tagValue("d"))
+        let del = try EntryDeletion.template(pubkey: f.pubkey, dateString: d, eventId: entry.id)
+            .signed(privateKey: sk, createdAt: entry.createdAt)
+        let t = EntryDeletion.tombstones(from: [del], owner: f.pubkey)
+        XCTAssertEqual(t[EntryDeletion.address(pubkey: f.pubkey, dateString: d)], entry.createdAt)
+        XCTAssertTrue(EntryDeletion.isDeleted(entry, tombstones: t))
+        var oneLater = entry; oneLater.createdAt += 1
+        XCTAssertFalse(EntryDeletion.isDeleted(oneLater, tombstones: t))
+    }
+
+    /// L2: the `day` tag must be an integer 1–366; anything else is rejected
+    /// even when the event is correctly signed by the owner.
+    func testDayTagOutsideOneTo366IsRejected() throws {
+        func entry(day: String) throws -> NostrEvent {
+            try UnsignedEvent(kind: 36669, tags: [["d", "2028-12-31"], ["published_at", "1830240000"], ["day", day], ["alt", "x"]], content: "x")
+                .signed(privateKey: sk, createdAt: 1_830_300_000)
+        }
+        for bad in ["0", "367", "-1", "1000", "abc", "", "1.5"] {
+            XCTAssertFalse(DailyEntry.isValid(try entry(day: bad), owner: f.pubkey), "day=\(bad)")
+        }
+        for good in ["1", "365", "366"] {
+            XCTAssertTrue(DailyEntry.isValid(try entry(day: good), owner: f.pubkey), "day=\(good)")
+        }
+    }
+
     func testIOSDeletionHasWebShape() throws {
         let t = EntryDeletion.template(pubkey: f.pubkey, dateString: "2026-11-24", eventId: try XCTUnwrap(f.deletion.tagValue("e")))
         XCTAssertEqual(t.kind, 5)
@@ -126,7 +154,7 @@ final class WebInteropTests: XCTestCase {
         var broken = f.settings.event
         broken.content = "AgAAAA" + String(broken.content.dropFirst(6))
         XCTAssertThrowsError(try AppSettings.read(broken, privateKey: sk)) { XCTAssertEqual($0 as? AppSettings.ReadError, .undecryptable) }
-        XCTAssertThrowsError(try AppSettings.read(f.settings.event, privateKey: NostrKeys.generatePrivateKey()))
+        XCTAssertThrowsError(try AppSettings.read(f.settings.event, privateKey: try NostrKeys.generatePrivateKey()))
     }
 
     func testSettingsVersionAboveOneIsReadOnly() {

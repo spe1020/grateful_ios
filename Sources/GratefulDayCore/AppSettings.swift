@@ -72,6 +72,12 @@ public struct AppSettings: Equatable, Sendable {
 
     /// Decrypt and parse a settings event. Unlike web, a failed decrypt is an
     /// error ("unknown"), never "no settings" (spec §2.4).
+    ///
+    /// REQUIRED before iOS gets any settings write path (interop spec §2.4):
+    /// decrypted text that is not a valid JSON object must also be "unknown"
+    /// and block the write. `parse` stays tolerant to match web today, so it
+    /// still returns empty settings for that case; a writer must not use that
+    /// result as a base to publish over.
     public static func read(_ event: NostrEvent, privateKey: Data) throws -> Parsed {
         guard let json = try? NIP44.decryptFromSelf(event.content, privateKey: privateKey) else { throw ReadError.undecryptable }
         return parse(json)

@@ -2,7 +2,7 @@ import XCTest
 import CryptoKit
 @testable import NostrCore
 
-/// The official NIP-44 v2 vectors (paulmillr/nip44 @ 671a1f04, sha256 checked
+/// The official NIP-44 v2 vectors (paulmillr/nip44 @ 671a1f04, javascript/test/, Unlicense; sha256 checked
 /// against the value published in NIP-44). Every section runs, including all
 /// invalid cases.
 final class NIP44VectorTests: XCTestCase {
