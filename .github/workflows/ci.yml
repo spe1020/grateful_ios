@@ -80,3 +80,41 @@ jobs:
             -disableAutomaticPackageResolution \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO
+      - name: Build the app for iOS Simulator
+        # The iPhone app (App/GratefulDay.xcodeproj) on top of the local package.
+        # Uses the project's own committed Package.resolved.
+        run: |
+          xcodebuild build \
+            -project App/GratefulDay.xcodeproj \
+            -scheme GratefulDay \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData-App" \
+            -disableAutomaticPackageResolution \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO
+
+  app-ui-tests:
+    name: App UI tests
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
+      - name: Run UI tests
+        # Picks the first available iPhone simulator, so a runner image change
+        # in device names doesn't break the job.
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for r,v in sorted(d.items(), reverse=True) if "iOS" in r for x in v if x["name"].startswith("iPhone")))')
+          echo "Simulator: $UDID"
+          xcodebuild test \
+            -project App/GratefulDay.xcodeproj \
+            -scheme GratefulDay \
+            -destination "id=$UDID" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData-UITests" \
+            -disableAutomaticPackageResolution \
+            -skipPackagePluginValidation
