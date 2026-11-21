@@ -1,12 +1,16 @@
 # Third-Party Notices
 
-Grateful Day iOS is licensed under the MIT License, Copyright (c) 2026 Seth Sager (see [LICENSE](LICENSE)). That covers original Grateful Day iOS code only. The components below keep their own copyright and license, reproduced here as their licenses require.
+Grateful Day iOS is an independent project owned by Seth Sager and licensed under the MIT License, Copyright (c) 2026 Seth Sager (see [LICENSE](LICENSE)). It is not a fork or derivative of Wisp or Zap Cooking, and that license covers original Grateful Day iOS code.
+
+The components below are used in Grateful Day iOS but are not owned by Seth Sager. Each keeps its own copyright and license, reproduced here as those licenses require. Their notices cover only the files listed in each section, not the rest of Grateful Day iOS.
 
 ## 1. Wisp iOS: five cryptography and encoding files
 
 - **Source:** [barrydeen/wisp-ios](https://github.com/barrydeen/wisp-ios), `main` at commit `914febaf597fc044a680ead632931009b21d641a` (fetched 2026-11-21).
 - **Author:** Barry Deen. Git history shows these five files were written and committed by Barry Deen alone.
 - **License:** MIT, as stated in the upstream README §License, which reproduces the full license text below. The upstream repository has no separate LICENSE file; Barry Deen's Android sibling project [barrydeen/wisp](https://github.com/barrydeen/wisp) carries the same MIT license as a LICENSE file.
+- **Scope of the grant:** the README's MIT statement was added in upstream commit `06b99cd` ("init wisp-ios"), the same commit that introduced all five files, and the README has had no other commit since. Every upstream revision of the five files (`06b99cd`, `ab25bcd`, and for `Bech32.swift` also `f007f61`) was made by Barry Deen while that statement was in place.
+- **What this notice covers:** only the five files in the table. Barry Deen's copyright and this license apply to those files, not to Grateful Day iOS as a whole. No other Wisp or Zap Cooking code is used, and none may be added without separate authorization.
 - **Status:** these files are **not yet in this repository**. Seth asked for licensing and provenance to be verified before any third-party crypto code comes in, so they arrive in the Phase 0 PR, stacked on this one, copied verbatim from the upstream blobs listed here. Each copied file will carry a header naming its source path, the upstream commit, and Barry Deen's copyright line. Any later change will be marked with a dated "Modified for Grateful Day" note.
 
 | File | Upstream path | Upstream blob (git) | Lines |
