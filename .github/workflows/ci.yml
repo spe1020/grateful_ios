@@ -1,0 +1,82 @@
+# Required status checks for main. Each job's `name:` is the check name used
+# in branch protection — rename a job only together with the protection rule.
+# No `paths:` filters on purpose: a required check that never runs blocks PRs.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Package.swift is swift-tools-version 6.2, which needs Xcode 26+.
+  # Pinned (not the image default) so a runner image update can't change the toolchain silently.
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+jobs:
+  swiftpm-build:
+    name: SwiftPM build
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Build
+        # Fails if Package.resolved is missing or out of date.
+        run: swift build --force-resolved-versions
+
+  swiftpm-tests:
+    name: SwiftPM tests
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Test
+        run: swift test --force-resolved-versions
+
+  ios-simulator-build:
+    name: iOS Simulator build
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+      - name: Build for iOS Simulator
+        # No app target yet: build the package's aggregate scheme for the simulator.
+        # -skipPackagePluginValidation: xcodebuild otherwise stops for the interactive
+        # trust prompt for swift-secp256k1's SharedSourcesPlugin (the build-tool plugin
+        # that compiles libsecp256k1 into P256K). The dependency is pinned by revision
+        # in Package.resolved, and `swift build` runs the same plugin without a prompt.
+        run: |
+          xcodebuild build \
+            -scheme GratefulDayKit-Package \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -disableAutomaticPackageResolution \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO
