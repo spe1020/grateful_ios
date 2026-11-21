@@ -15,4 +15,4 @@ commit `a33f42c` (Node, `vite-node`, the repo's `node_modules`). Nothing here wa
 
 **Not covered here:** capturing events from a running browser session (the fixtures come from the
 same functions the browser runs, but not through the UI), and the `client` tag web adds on https.
-The generator script lives in the Phase 0 PR description so it can be re-run.
+The generator scripts are in `scripts/fixtures/` (see its README to re-run them).
