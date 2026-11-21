@@ -94,7 +94,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
   app-ui-tests:
-    name: App UI tests
+    name: App tests
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -105,7 +105,7 @@ jobs:
         run: |
           xcodebuild -version
           xcrun simctl list runtimes
-      - name: Run UI tests
+      - name: Run unit and UI tests
         # Picks the first available iPhone simulator, so a runner image change
         # in device names doesn't break the job.
         run: |

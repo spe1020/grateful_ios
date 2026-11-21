@@ -18,11 +18,20 @@
 			remoteGlobalIDString = A10000000000000000000101;
 			remoteInfo = GratefulDay;
 		};
+		A10000000000000000000902 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000101;
+			remoteInfo = GratefulDay;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		A10000000000000000000201 /* GratefulDay.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GratefulDay.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000202 /* GratefulDayUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GratefulDayUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000203 /* GratefulDayTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GratefulDayTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000204 /* GratefulDay.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GratefulDay.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -34,6 +43,11 @@
 		A10000000000000000000402 /* GratefulDayUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = GratefulDayUITests;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000403 /* GratefulDayTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = GratefulDayTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -54,6 +68,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000503 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -61,6 +82,8 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000401 /* GratefulDay */,
+				A10000000000000000000204 /* GratefulDay.entitlements */,
+				A10000000000000000000403 /* GratefulDayTests */,
 				A10000000000000000000402 /* GratefulDayUITests */,
 				A10000000000000000000602 /* Products */,
 			);
@@ -71,6 +94,7 @@
 			children = (
 				A10000000000000000000201 /* GratefulDay.app */,
 				A10000000000000000000202 /* GratefulDayUITests.xctest */,
+				A10000000000000000000203 /* GratefulDayTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -124,6 +148,29 @@
 			productReference = A10000000000000000000202 /* GratefulDayUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		A10000000000000000000103 /* GratefulDayTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000C04 /* Build configuration list for PBXNativeTarget "GratefulDayTests" */;
+			buildPhases = (
+				A10000000000000000000705 /* Sources */,
+				A10000000000000000000503 /* Frameworks */,
+				A10000000000000000000706 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A10000000000000000000A02 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000403 /* GratefulDayTests */,
+			);
+			name = GratefulDayTests;
+			packageProductDependencies = (
+			);
+			productName = GratefulDayTests;
+			productReference = A10000000000000000000203 /* GratefulDayTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -138,6 +185,10 @@
 						CreatedOnToolsVersion = 26.0;
 					};
 					A10000000000000000000102 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = A10000000000000000000101;
+					};
+					A10000000000000000000103 = {
 						CreatedOnToolsVersion = 26.0;
 						TestTargetID = A10000000000000000000101;
 					};
@@ -162,6 +213,7 @@
 			targets = (
 				A10000000000000000000101 /* GratefulDay */,
 				A10000000000000000000102 /* GratefulDayUITests */,
+				A10000000000000000000103 /* GratefulDayTests */,
 			);
 		};
 /* End PBXProject section */
@@ -175,6 +227,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A10000000000000000000704 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000706 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -198,6 +257,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000705 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -205,6 +271,11 @@
 			isa = PBXTargetDependency;
 			target = A10000000000000000000101 /* GratefulDay */;
 			targetProxy = A10000000000000000000901 /* PBXContainerItemProxy */;
+		};
+		A10000000000000000000A02 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000101 /* GratefulDay */;
+			targetProxy = A10000000000000000000902 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -255,6 +326,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				CODE_SIGN_ENTITLEMENTS = GratefulDay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -283,6 +355,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				CODE_SIGN_ENTITLEMENTS = GratefulDay.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -339,6 +412,40 @@
 			};
 			name = Release;
 		};
+		A10000000000000000000B07 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = app.gratefulday.ios.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GratefulDay.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/GratefulDay";
+			};
+			name = Debug;
+		};
+		A10000000000000000000B08 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = app.gratefulday.ios.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GratefulDay.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/GratefulDay";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -365,6 +472,15 @@
 			buildConfigurations = (
 				A10000000000000000000B05 /* Debug */,
 				A10000000000000000000B06 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A10000000000000000000C04 /* Build configuration list for PBXNativeTarget "GratefulDayTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10000000000000000000B07 /* Debug */,
+				A10000000000000000000B08 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

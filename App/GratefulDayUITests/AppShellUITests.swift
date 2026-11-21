@@ -39,4 +39,30 @@ final class AppShellUITests: XCTestCase {
         XCTAssertFalse(date.label.isEmpty)
         XCTAssertTrue(date.frame.width <= app.windows.firstMatch.frame.width, "Date fits the screen width")
     }
+
+    /// M2 criterion 7: the pre-account statement is one tap from Today, and in Settings → Privacy.
+    func testPreAccountStatementReachableFromTodayAndSettings() {
+        let app = XCUIApplication()
+        app.launch()
+        let footer = app.buttons["today.localOnly"]
+        XCTAssertTrue(footer.waitForExistence(timeout: 10))
+        XCTAssertEqual(footer.label, "On this iPhone only")
+        footer.tap()
+        XCTAssertTrue(app.staticTexts["privacy.statement"].waitForExistence(timeout: 5))
+        app.buttons["Done"].tap()
+
+        app.tabBars.buttons["Settings"].tap()
+        app.buttons["settings.privacy"].tap()
+        XCTAssertTrue(app.staticTexts["privacy.statement"].waitForExistence(timeout: 5))
+    }
+
+    /// M2 criterion 4: with protected data available, the journal opens: Today
+    /// shows the writing area, not the locked state.
+    func testJournalOpensOnLaunch() {
+        let app = XCUIApplication()
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Today's reflection"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["Unlock your iPhone to open your journal."].exists)
+        XCTAssertFalse(app.staticTexts["Your journal couldn't be opened just now."].exists)
+    }
 }
