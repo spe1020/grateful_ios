@@ -68,10 +68,15 @@ jobs:
           xcodebuild -showsdks
       - name: Build for iOS Simulator
         # No app target yet: build the package's aggregate scheme for the simulator.
+        # -skipPackagePluginValidation: xcodebuild otherwise stops for the interactive
+        # trust prompt for swift-secp256k1's SharedSourcesPlugin (the build-tool plugin
+        # that compiles libsecp256k1 into P256K). The dependency is pinned by revision
+        # in Package.resolved, and `swift build` runs the same plugin without a prompt.
         run: |
           xcodebuild build \
             -scheme GratefulDayKit-Package \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -disableAutomaticPackageResolution \
+            -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO
