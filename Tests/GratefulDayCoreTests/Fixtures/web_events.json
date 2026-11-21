@@ -1,0 +1,544 @@
+{
+  "_about": "Generated from spe1020/gratefulday @ a33f42c by running its own code (entryNotes, gratitudeUtils, privacyUtils, appSettings; 36669 tags mirror DayDetailDialog.tsx buildEntryEvent). Signed with a PUBLIC TEST KEY: secret = sha256(\"grateful-day-ios-fixture-key-v1\"). Never use it for anything real. Generated in TZ=America/Chicago.",
+  "secretKeyHex": "c7b69fb44a9214bd5f5dd35588502487a731634e966d1941faa3f6b02ac8506f",
+  "pubkey": "f36d8d3e0a11fda7008d93e37c909d16297aa992cc15c7cd9e7a270f64eeb4c1",
+  "entries": [
+    {
+      "name": "public_single",
+      "event": {
+        "kind": 36669,
+        "content": "Morning light on the kitchen table.",
+        "tags": [
+          [
+            "d",
+            "2026-11-21"
+          ],
+          [
+            "published_at",
+            "1795240800"
+          ],
+          [
+            "day",
+            "325"
+          ],
+          [
+            "alt",
+            "Daily reflection entry for Saturday, November 21 (Day 325)"
+          ]
+        ],
+        "created_at": 1795280000,
+        "pubkey": "f36d8d3e0a11fda7008d93e37c909d16297aa992cc15c7cd9e7a270f64eeb4c1",
+        "id": "81737ef5764fa9e5be929e0f839ca0d8021ab7e0490d9a0058c89268c6f8ce14",
+        "sig": "1449d2f0c172acfd63d89ef365135518703f97650aa7b563e78120a585339e2ddcd12fe8405ca7f2ca1eacd7c20ab69229e469429deb605d421bc698217ef3a1"
+      },
+      "plaintext": "Morning light on the kitchen table.",
+      "notes": [
+        "Morning light on the kitchen table."
+      ],
+      "isPrivate": false
+    },
+    {
+      "name": "private_single",
+      "event": {
+        "kind": 36669,
+        "content": "AtEqIN2dlhw4eVMsstscWk4CdKuaK1C2tFH1vE+9V16BLRMtHCh6+BYu+WPQBmuWiZ041r/H+V6UXGG87anWBrYc7lPcJNDaTI1TD50++umpSyilnA9ILuhs5WefobjbfW3dLoTJQx5RvLAQJBvhbdd0yj0W4p97qyenlJdIPpm4bIg=",
+        "tags": [
+          [
+            "d",
+            "2026-11-21"
+          ],
+          [
+            "published_at",
+            "1795240800"
+          ],
+          [
+            "day",
+            "325"
+          ],
+          [
+            "encrypted",
+            "nip44"
+          ],
+          [
+            "alt",
+            "Encrypted gratitude journal entry"
+          ]
+        ],
+        "created_at": 1795280001,
+        "pubkey": "f36d8d3e0a11fda7008d93e37c909d16297aa992cc15c7cd9e7a270f64eeb4c1",
+        "id": "90db9e0990ba331ee82ade90c524cef32bae7a2a113ef52d1e4be84ec64fc3c0",
+        "sig": "4add10b937c7e91101efe88f2bc6ce11e8cff8dc721eca634735700ea9fdad57f811256c066aaf68e3cd08e5f98078b7cd42a566dd02125f8e11c1511107706f"
+      },
+      "plaintext": "A private thank-you to my sister.",
+      "notes": [
+        "A private thank-you to my sister."
+      ],
+      "isPrivate": true
+    },
+    {
+      "name": "public_multi",
+      "event": {
+        "kind": 36669,
+        "content": "First moment.\n\nSecond moment,\nwith a line break.\n\nThird, trimmed.",
+        "tags": [
+          [
+            "d",
+            "2026-11-22"
+          ],
+          [
+            "published_at",
+            "1795327200"
+          ],
+          [
+            "day",
+            "326"
+          ],
+          [
+            "alt",
+            "Daily reflection entry for Sunday, November 22 (Day 326)"
+          ]
+        ],
+        "created_at": 1795366400,
+        "pubkey": "f36d8d3e0a11fda7008d93e37c909d16297aa992cc15c7cd9e7a270f64eeb4c1",
+        "id": "7e21adc594a50d5adf7ed9d8e24d2ed53d875a2d01aa1adc06b29299a7836cfc",
+        "sig": "71877e116b8f572e0e1b4963601c6c5e9f05a44557b761d33c067d2c0d1727c1536a3f57d81e987baf71f0805069dd57940f3e8318aeffe9ddcaa6e37c501d48"
+      },
+      "plaintext": "First moment.\n\nSecond moment,\nwith a line break.\n\nThird, trimmed.",
+      "notes": [
+        "First moment.",
+        "Second moment,\nwith a line break.",
+        "Third, trimmed."
+      ],
+      "isPrivate": false
+    },
+    {
+      "name": "private_multi_unicode",
+      "event": {
+        "kind": 36669,
+        "content": "AlOhq5Bq605AO7BdYdOJQm7wJLg/vkckurYEthP18CX5kK4LG2IZ5Vry2t/lIZPQi9JIDzJV2QBxT8H/tQ0NUs03gGiDH2+EG8Az4T//m8ES4AaVkeVHCdjtcsS4q/dpILY12lJUDKfRXb3LSSv3YKyG8YTWcUmApoigkd/XbJzskR4=",
+        "tags": [
+          [
+            "d",
+            "2026-11-23"
+          ],
+          [
+            "published_at",
+            "1795413600"
+          ],
+          [
+            "day",
+            "327"
+          ],
+          [
+            "encrypted",
+            "nip44"
+          ],
+          [
+            "alt",
+            "Encrypted gratitude journal entry"
+          ]
+        ],
+        "created_at": 1795452800,
+        "pubkey": "f36d8d3e0a11fda7008d93e37c909d16297aa992cc15c7cd9e7a270f64eeb4c1",
+        "id": "f3ba811b4fe344675f241b2fed03dde2e6979a4d8965775c8a935d5394cebc88",
+        "sig": "386e4367b2c4abf1693520b5fab4ba64e94c871e9e38b6e7a6b67a3733d933fc8293054e547fa7839b780a7c9cf5615ce145ee87efae05f2a2974ffac7ec0e7d"
+      },
+      "plaintext": "Grateful for café ☕ and 🙏\n\nÜnïcödé second note",
+      "notes": [
+        "Grateful for café ☕ and 🙏",
+        "Ünïcödé second note"
+      ],
+      "isPrivate": true
+    },
+    {
+      "name": "edited_v1",
+      "event": {
+        "kind": 36669,
+        "content": "Draft one.",
+        "tags": [
+          [
+            "d",
+            "2026-11-24"
+          ],
+          [
+            "published_at",
+            "1795500000"
+          ],
+          [
+            "day",
+            "328"
+          ],
+          [
+            "alt",
+            "Daily reflection entry for Tuesday, November 24 (Day 328)"
+          ]
+        ],
+        "created_at": 1795539200,
+        "pubkey": "f36d8d3e0a11fda7008d93e37c909d16297aa992cc15c7cd9e7a270f64eeb4c1",
+        "id": "38760d92d0d709365ff9b0b59b6d0779a1273c12967813865a8f5fea8fbe3cc8",
+        "sig": "7b26bab870b9dd04837b5a9b1eee68c72b17332fa0d86e5c976522f1f5eee2c224a0dcec90a9171bcf94832e68a5c4d5cb1356d4abae20b65bdb7aa55730ef9a"
+      },
+      "plaintext": "Draft one.",
+      "notes": [
+        "Draft one."
+      ],
+      "isPrivate": false
+    },
+    {
+      "name": "edited_v2",
+      "event": {
+        "kind": 36669,
+        "content": "Draft one.\n\nAdded later.",
+        "tags": [
+          [
+            "d",
+            "2026-11-24"
+          ],
+          [
+            "published_at",
+            "1795500000"
+          ],
+          [
+            "day",
+            "328"
+          ],
+          [
+            "alt",
+            "Daily reflection entry for Tuesday, November 24 (Day 328)"
+          ]
+        ],
+        "created_at": 1795539300,
+        "pubkey": "f36d8d3e0a11fda7008d93e37c909d16297aa992cc15c7cd9e7a270f64eeb4c1",
+        "id": "2dc37b72a53ce0e90530a8f8f5c1fa8946c70a37284c858a3b2ba741279ad89f",
+        "sig": "d077f9d29b6fa09efdf379cafed66c5e97ae46453ad9726e1a6e4d50790abf7d3b6f6523b1cacfbc328ca34d83e336488f75ee800edd99ed70bcdc7a22574e7c"
+      },
+      "plaintext": "Draft one.\n\nAdded later.",
+      "notes": [
+        "Draft one.",
+        "Added later."
+      ],
+      "isPrivate": false,
+      "replaces": "38760d92d0d709365ff9b0b59b6d0779a1273c12967813865a8f5fea8fbe3cc8"
+    },
+    {
+      "name": "leap_day",
+      "event": {
+        "kind": 36669,
+        "content": "Leap day.",
+        "tags": [
+          [
+            "d",
+            "2028-02-29"
+          ],
+          [
+            "published_at",
+            "1835416800"
+          ],
+          [
+            "day",
+            "60"
+          ],
+          [
+            "alt",
+            "Daily reflection entry for Tuesday, February 29 (Day 60)"
+          ]
+        ],
+        "created_at": 1835395200,
+        "pubkey": "f36d8d3e0a11fda7008d93e37c909d16297aa992cc15c7cd9e7a270f64eeb4c1",
+        "id": "ce85a89375879f5c65f8a55fd5fd1a2e2aed942ddbaeb008f5a41973227e16d9",
+        "sig": "79b5b37a48cde3f3a36cb4d746956c931e74936830ff6b7a469c88d94b58f2b188e9fb5a57937bf8ff875074221ac76d59bdefd3c41987f4195119d0d8e6d66c"
+      },
+      "plaintext": "Leap day.",
+      "notes": [
+        "Leap day."
+      ],
+      "isPrivate": false
+    },
+    {
+      "name": "crlf_read_only",
+      "event": {
+        "kind": 36669,
+        "created_at": 1795600000,
+        "content": "One\r\n\r\nTwo\r\nstill two\r\r\rThree",
+        "tags": [
+          [
+            "d",
+            "2026-11-25"
+          ],
+          [
+            "published_at",
+            "1795586400"
+          ],
+          [
+            "day",
+            "329"
+          ],
+          [
+            "alt",
+            "crlf"
+          ]
+        ],
+        "pubkey": "f36d8d3e0a11fda7008d93e37c909d16297aa992cc15c7cd9e7a270f64eeb4c1",
+        "id": "ea476cc0d34fdcb6274c72a725701e9e8d82f6e3a8aac5c11e2ba5451a6235fe",
+        "sig": "ebe81e76e79d18add05f4d22346bb095c17b5fe53c7e1f8e73e5d583b936f4f3dc2f459f964802ea635fecf15e8b58edfba8efc0342573febdcf7384b29686b9"
+      },
+      "notes": [
+        "One",
+        "Two\nstill two",
+        "Three"
+      ],
+      "isPrivate": false
+    }
+  ],
+  "deletion": {
+    "kind": 5,
+    "content": "Deleted gratitude entry",
+    "created_at": 1795540000,
+    "tags": [
+      [
+        "a",
+        "36669:f36d8d3e0a11fda7008d93e37c909d16297aa992cc15c7cd9e7a270f64eeb4c1:2026-11-24"
+      ],
+      [
+        "e",
+        "38760d92d0d709365ff9b0b59b6d0779a1273c12967813865a8f5fea8fbe3cc8"
+      ],
+      [
+        "k",
+        "36669"
+      ]
+    ],
+    "pubkey": "f36d8d3e0a11fda7008d93e37c909d16297aa992cc15c7cd9e7a270f64eeb4c1",
+    "id": "1021abe98794b91beed4925989443c5b619cb61bbabe89a458d1758b94db15cc",
+    "sig": "103e7d4db0927f942ae3a25e925f88ace2baaf5fc71ee905ef23a683b85a5da19b31796c466c746e6588b1fcca28ea8c93cff4a6f66acf15990a24c03e82465c"
+  },
+  "settings": {
+    "event": {
+      "kind": 30078,
+      "content": "Ai8Q8Gc/YuoCmxE4R3o5IqRuGW5LnD0JGmrj+yBBCgZH/INEvmAVaROff+VwVcaA/waP7QwnUxJ4NlQ4nN1QeW6dzbWHdGXOIv+A9QwA2rKCcuoQTDp5uiT2f0JUcvCEQdFKenchtaT5G/vvaDUSxQiK6iQiCAjjqoFB0b0FV3v3ekeO5c7OiHKTR0tHuHPVal3aYd4tgoCzLdmLJYblk0/dUI9Nf0cgVgcuyLk0SkXuK2zkREk9ACYravc0LVuvhqtJ",
+      "tags": [
+        [
+          "d",
+          "gratefulday:settings"
+        ],
+        [
+          "encrypted",
+          "nip44"
+        ],
+        [
+          "alt",
+          "Encrypted gratefulday settings"
+        ]
+      ],
+      "created_at": 1795280100,
+      "pubkey": "f36d8d3e0a11fda7008d93e37c909d16297aa992cc15c7cd9e7a270f64eeb4c1",
+      "id": "a832e54609c11f5f49a65c724377c89e4005e038a5b0c125637ec9079850fa73",
+      "sig": "0173324e86afff8805d38f3d39de1249b23b8d039a6b7ec7c6bd755f3b4267b69993d3311c60457cec8d2b48707018653c0833241f12d1625eaf016c60a2454c"
+    },
+    "plaintextJson": "{\"version\":1,\"privacyDefault\":true,\"celebratedMilestones\":[7,30],\"lastSeenNotifications\":1795280000}",
+    "parsed": {
+      "privacyDefault": true,
+      "celebratedMilestones": [
+        30,
+        7
+      ],
+      "lastSeenNotifications": 1795280000
+    }
+  },
+  "settingsMinimal": {
+    "event": {
+      "kind": 30078,
+      "content": "At+x7mogJg4yh+aByU7RelZf020y8pswIncoleBKcbOrJgOE7o3E+xScewBZWUGx7i70zY0heMsaRRgMtqBvytSWb8SVw3aIyjKVIEeWuQUp8ZlpNhfPeI6WCvfGRUpdT90Ha2JcriZ81KnXnU/YStjRMH926D6kjC9D8KPLOAfa4ew=",
+      "tags": [
+        [
+          "d",
+          "gratefulday:settings"
+        ],
+        [
+          "encrypted",
+          "nip44"
+        ],
+        [
+          "alt",
+          "Encrypted gratefulday settings"
+        ]
+      ],
+      "created_at": 1795280050,
+      "pubkey": "f36d8d3e0a11fda7008d93e37c909d16297aa992cc15c7cd9e7a270f64eeb4c1",
+      "id": "ccb65d666d984e00e8255d6ea330be37bad336f90c52f4ed16d149c6c3a4ad1a",
+      "sig": "85df88f8aa676fb031a0961612f74726ae662f742649b0169f6b6e8f99998ba930d9501adfde70fd233dbe0fd504f9743398207f9b17739a8db9697369d58fe2"
+    },
+    "plaintextJson": "{\"version\":1,\"celebratedMilestones\":[]}"
+  },
+  "notes": [
+    {
+      "input": "",
+      "split": [],
+      "normalized": ""
+    },
+    {
+      "input": "   ",
+      "split": [],
+      "normalized": ""
+    },
+    {
+      "input": "one",
+      "split": [
+        "one"
+      ],
+      "normalized": "one"
+    },
+    {
+      "input": "a\n\nb",
+      "split": [
+        "a",
+        "b"
+      ],
+      "normalized": "a\n\nb"
+    },
+    {
+      "input": "a\n \t\nb",
+      "split": [
+        "a",
+        "b"
+      ],
+      "normalized": "a\n\nb"
+    },
+    {
+      "input": "a\nb",
+      "split": [
+        "a\nb"
+      ],
+      "normalized": "a\nb"
+    },
+    {
+      "input": "\n\n a \n\n\n b \n",
+      "split": [
+        "a",
+        "b"
+      ],
+      "normalized": "a\n\nb"
+    },
+    {
+      "input": "x\r\ny",
+      "split": [
+        "x\ny"
+      ],
+      "normalized": "x\ny"
+    },
+    {
+      "input": "x\r\n\r\ny",
+      "split": [
+        "x",
+        "y"
+      ],
+      "normalized": "x\n\ny"
+    },
+    {
+      "input": "x\r\ry",
+      "split": [
+        "x",
+        "y"
+      ],
+      "normalized": "x\n\ny"
+    }
+  ],
+  "settingsMerge": [
+    {
+      "local": {
+        "celebratedMilestones": [
+          7
+        ]
+      },
+      "remote": null,
+      "reconciled": {
+        "celebratedMilestones": [
+          7
+        ]
+      }
+    },
+    {
+      "local": {
+        "privacyDefault": false,
+        "celebratedMilestones": [
+          7,
+          14
+        ],
+        "lastSeenNotifications": 500
+      },
+      "remote": {
+        "privacyDefault": true,
+        "celebratedMilestones": [
+          30
+        ],
+        "lastSeenNotifications": 400
+      },
+      "reconciled": {
+        "privacyDefault": true,
+        "celebratedMilestones": [
+          7,
+          14,
+          30
+        ],
+        "lastSeenNotifications": 500
+      }
+    },
+    {
+      "local": {
+        "privacyDefault": true,
+        "celebratedMilestones": []
+      },
+      "remote": {
+        "celebratedMilestones": [
+          7
+        ]
+      },
+      "reconciled": {
+        "privacyDefault": true,
+        "celebratedMilestones": [
+          7
+        ]
+      }
+    }
+  ],
+  "settingsParse": [
+    {
+      "json": "{\"version\":1,\"privacyDefault\":true,\"celebratedMilestones\":[30,7,7],\"lastSeenNotifications\":5}",
+      "parsed": {
+        "privacyDefault": true,
+        "celebratedMilestones": [
+          7,
+          30
+        ],
+        "lastSeenNotifications": 5
+      }
+    },
+    {
+      "json": "not json",
+      "parsed": {
+        "celebratedMilestones": []
+      }
+    },
+    {
+      "json": "null",
+      "parsed": {
+        "celebratedMilestones": []
+      }
+    },
+    {
+      "json": "{\"celebratedMilestones\":\"nope\",\"privacyDefault\":3}",
+      "parsed": {
+        "celebratedMilestones": []
+      }
+    },
+    {
+      "json": "{\"celebratedMilestones\":[7,\"x\",14],\"extra\":1}",
+      "parsed": {
+        "celebratedMilestones": [
+          7,
+          14
+        ]
+      }
+    }
+  ]
+}
