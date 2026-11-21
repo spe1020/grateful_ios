@@ -1,0 +1,371 @@
+{
+ "_about": "gratitudeUtils (formatDateString, getDayOfYear, getDateFromDayOfYear, formatDisplayDate) at a33f42c, run once per TZ.",
+ "zones": [
+  {
+   "tz": "America/New_York",
+   "rows": [
+    {
+     "instant": 1795269600,
+     "d": "2026-11-21",
+     "day": 325,
+     "published_at": 1795237200,
+     "alt": "Daily reflection entry for Saturday, November 21 (Day 325)"
+    },
+    {
+     "instant": 1795305600,
+     "d": "2026-11-21",
+     "day": 325,
+     "published_at": 1795237200,
+     "alt": "Daily reflection entry for Saturday, November 21 (Day 325)"
+    },
+    {
+     "instant": 1798761599,
+     "d": "2026-12-31",
+     "day": 365,
+     "published_at": 1798693200,
+     "alt": "Daily reflection entry for Thursday, December 31 (Day 365)"
+    },
+    {
+     "instant": 1798761600,
+     "d": "2026-12-31",
+     "day": 365,
+     "published_at": 1798693200,
+     "alt": "Daily reflection entry for Thursday, December 31 (Day 365)"
+    },
+    {
+     "instant": 1835395200,
+     "d": "2028-02-28",
+     "day": 59,
+     "published_at": 1835326800,
+     "alt": "Daily reflection entry for Monday, February 28 (Day 59)"
+    },
+    {
+     "instant": 1772323200,
+     "d": "2026-02-28",
+     "day": 59,
+     "published_at": 1772254800,
+     "alt": "Daily reflection entry for Saturday, February 28 (Day 59)"
+    },
+    {
+     "instant": 1773536400,
+     "d": "2026-03-14",
+     "day": 73,
+     "published_at": 1773460800,
+     "alt": "Daily reflection entry for Saturday, March 14 (Day 73)"
+    },
+    {
+     "instant": 1793516400,
+     "d": "2026-11-01",
+     "day": 305,
+     "published_at": 1793505600,
+     "alt": "Daily reflection entry for Sunday, November 1 (Day 305)"
+    }
+   ]
+  },
+  {
+   "tz": "Asia/Kolkata",
+   "rows": [
+    {
+     "instant": 1795269600,
+     "d": "2026-11-21",
+     "day": 325,
+     "published_at": 1795199400,
+     "alt": "Daily reflection entry for Saturday, November 21 (Day 325)"
+    },
+    {
+     "instant": 1795305600,
+     "d": "2026-11-22",
+     "day": 326,
+     "published_at": 1795285800,
+     "alt": "Daily reflection entry for Sunday, November 22 (Day 326)"
+    },
+    {
+     "instant": 1798761599,
+     "d": "2027-01-01",
+     "day": 1,
+     "published_at": 1798741800,
+     "alt": "Daily reflection entry for Friday, January 1 (Day 1)"
+    },
+    {
+     "instant": 1798761600,
+     "d": "2027-01-01",
+     "day": 1,
+     "published_at": 1798741800,
+     "alt": "Daily reflection entry for Friday, January 1 (Day 1)"
+    },
+    {
+     "instant": 1835395200,
+     "d": "2028-02-29",
+     "day": 60,
+     "published_at": 1835375400,
+     "alt": "Daily reflection entry for Tuesday, February 29 (Day 60)"
+    },
+    {
+     "instant": 1772323200,
+     "d": "2026-03-01",
+     "day": 60,
+     "published_at": 1772303400,
+     "alt": "Daily reflection entry for Sunday, March 1 (Day 60)"
+    },
+    {
+     "instant": 1773536400,
+     "d": "2026-03-15",
+     "day": 74,
+     "published_at": 1773513000,
+     "alt": "Daily reflection entry for Sunday, March 15 (Day 74)"
+    },
+    {
+     "instant": 1793516400,
+     "d": "2026-11-01",
+     "day": 305,
+     "published_at": 1793471400,
+     "alt": "Daily reflection entry for Sunday, November 1 (Day 305)"
+    }
+   ]
+  },
+  {
+   "tz": "Europe/London",
+   "rows": [
+    {
+     "instant": 1795269600,
+     "d": "2026-11-21",
+     "day": 325,
+     "published_at": 1795219200,
+     "alt": "Daily reflection entry for Saturday, November 21 (Day 325)"
+    },
+    {
+     "instant": 1795305600,
+     "d": "2026-11-22",
+     "day": 326,
+     "published_at": 1795305600,
+     "alt": "Daily reflection entry for Sunday, November 22 (Day 326)"
+    },
+    {
+     "instant": 1798761599,
+     "d": "2026-12-31",
+     "day": 365,
+     "published_at": 1798675200,
+     "alt": "Daily reflection entry for Thursday, December 31 (Day 365)"
+    },
+    {
+     "instant": 1798761600,
+     "d": "2027-01-01",
+     "day": 1,
+     "published_at": 1798761600,
+     "alt": "Daily reflection entry for Friday, January 1 (Day 1)"
+    },
+    {
+     "instant": 1835395200,
+     "d": "2028-02-29",
+     "day": 60,
+     "published_at": 1835395200,
+     "alt": "Daily reflection entry for Tuesday, February 29 (Day 60)"
+    },
+    {
+     "instant": 1772323200,
+     "d": "2026-03-01",
+     "day": 60,
+     "published_at": 1772323200,
+     "alt": "Daily reflection entry for Sunday, March 1 (Day 60)"
+    },
+    {
+     "instant": 1773536400,
+     "d": "2026-03-15",
+     "day": 74,
+     "published_at": 1773532800,
+     "alt": "Daily reflection entry for Sunday, March 15 (Day 74)"
+    },
+    {
+     "instant": 1793516400,
+     "d": "2026-11-01",
+     "day": 305,
+     "published_at": 1793491200,
+     "alt": "Daily reflection entry for Sunday, November 1 (Day 305)"
+    }
+   ]
+  },
+  {
+   "tz": "Pacific/Honolulu",
+   "rows": [
+    {
+     "instant": 1795269600,
+     "d": "2026-11-21",
+     "day": 325,
+     "published_at": 1795255200,
+     "alt": "Daily reflection entry for Saturday, November 21 (Day 325)"
+    },
+    {
+     "instant": 1795305600,
+     "d": "2026-11-21",
+     "day": 325,
+     "published_at": 1795255200,
+     "alt": "Daily reflection entry for Saturday, November 21 (Day 325)"
+    },
+    {
+     "instant": 1798761599,
+     "d": "2026-12-31",
+     "day": 365,
+     "published_at": 1798711200,
+     "alt": "Daily reflection entry for Thursday, December 31 (Day 365)"
+    },
+    {
+     "instant": 1798761600,
+     "d": "2026-12-31",
+     "day": 365,
+     "published_at": 1798711200,
+     "alt": "Daily reflection entry for Thursday, December 31 (Day 365)"
+    },
+    {
+     "instant": 1835395200,
+     "d": "2028-02-28",
+     "day": 59,
+     "published_at": 1835344800,
+     "alt": "Daily reflection entry for Monday, February 28 (Day 59)"
+    },
+    {
+     "instant": 1772323200,
+     "d": "2026-02-28",
+     "day": 59,
+     "published_at": 1772272800,
+     "alt": "Daily reflection entry for Saturday, February 28 (Day 59)"
+    },
+    {
+     "instant": 1773536400,
+     "d": "2026-03-14",
+     "day": 73,
+     "published_at": 1773482400,
+     "alt": "Daily reflection entry for Saturday, March 14 (Day 73)"
+    },
+    {
+     "instant": 1793516400,
+     "d": "2026-10-31",
+     "day": 304,
+     "published_at": 1793440800,
+     "alt": "Daily reflection entry for Saturday, October 31 (Day 304)"
+    }
+   ]
+  },
+  {
+   "tz": "Pacific/Kiritimati",
+   "rows": [
+    {
+     "instant": 1795269600,
+     "d": "2026-11-22",
+     "day": 326,
+     "published_at": 1795255200,
+     "alt": "Daily reflection entry for Sunday, November 22 (Day 326)"
+    },
+    {
+     "instant": 1795305600,
+     "d": "2026-11-22",
+     "day": 326,
+     "published_at": 1795255200,
+     "alt": "Daily reflection entry for Sunday, November 22 (Day 326)"
+    },
+    {
+     "instant": 1798761599,
+     "d": "2027-01-01",
+     "day": 1,
+     "published_at": 1798711200,
+     "alt": "Daily reflection entry for Friday, January 1 (Day 1)"
+    },
+    {
+     "instant": 1798761600,
+     "d": "2027-01-01",
+     "day": 1,
+     "published_at": 1798711200,
+     "alt": "Daily reflection entry for Friday, January 1 (Day 1)"
+    },
+    {
+     "instant": 1835395200,
+     "d": "2028-02-29",
+     "day": 60,
+     "published_at": 1835344800,
+     "alt": "Daily reflection entry for Tuesday, February 29 (Day 60)"
+    },
+    {
+     "instant": 1772323200,
+     "d": "2026-03-01",
+     "day": 60,
+     "published_at": 1772272800,
+     "alt": "Daily reflection entry for Sunday, March 1 (Day 60)"
+    },
+    {
+     "instant": 1773536400,
+     "d": "2026-03-15",
+     "day": 74,
+     "published_at": 1773482400,
+     "alt": "Daily reflection entry for Sunday, March 15 (Day 74)"
+    },
+    {
+     "instant": 1793516400,
+     "d": "2026-11-01",
+     "day": 305,
+     "published_at": 1793440800,
+     "alt": "Daily reflection entry for Sunday, November 1 (Day 305)"
+    }
+   ]
+  },
+  {
+   "tz": "UTC",
+   "rows": [
+    {
+     "instant": 1795269600,
+     "d": "2026-11-21",
+     "day": 325,
+     "published_at": 1795219200,
+     "alt": "Daily reflection entry for Saturday, November 21 (Day 325)"
+    },
+    {
+     "instant": 1795305600,
+     "d": "2026-11-22",
+     "day": 326,
+     "published_at": 1795305600,
+     "alt": "Daily reflection entry for Sunday, November 22 (Day 326)"
+    },
+    {
+     "instant": 1798761599,
+     "d": "2026-12-31",
+     "day": 365,
+     "published_at": 1798675200,
+     "alt": "Daily reflection entry for Thursday, December 31 (Day 365)"
+    },
+    {
+     "instant": 1798761600,
+     "d": "2027-01-01",
+     "day": 1,
+     "published_at": 1798761600,
+     "alt": "Daily reflection entry for Friday, January 1 (Day 1)"
+    },
+    {
+     "instant": 1835395200,
+     "d": "2028-02-29",
+     "day": 60,
+     "published_at": 1835395200,
+     "alt": "Daily reflection entry for Tuesday, February 29 (Day 60)"
+    },
+    {
+     "instant": 1772323200,
+     "d": "2026-03-01",
+     "day": 60,
+     "published_at": 1772323200,
+     "alt": "Daily reflection entry for Sunday, March 1 (Day 60)"
+    },
+    {
+     "instant": 1773536400,
+     "d": "2026-03-15",
+     "day": 74,
+     "published_at": 1773532800,
+     "alt": "Daily reflection entry for Sunday, March 15 (Day 74)"
+    },
+    {
+     "instant": 1793516400,
+     "d": "2026-11-01",
+     "day": 305,
+     "published_at": 1793491200,
+     "alt": "Daily reflection entry for Sunday, November 1 (Day 305)"
+    }
+   ]
+  }
+ ]
+}

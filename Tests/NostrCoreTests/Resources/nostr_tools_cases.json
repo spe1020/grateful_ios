@@ -1,0 +1,152 @@
+{
+ "_about": "Computed with nostr-tools (getEventHash, nip19) from gratefulday @ a33f42c node_modules.",
+ "eventIds": [
+  {
+   "pubkey": "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e",
+   "created_at": 1700000000,
+   "kind": 36669,
+   "tags": [
+    [
+     "d",
+     "2026-11-21"
+    ],
+    [
+     "alt",
+     "x \"y\" \n z"
+    ]
+   ],
+   "content": "",
+   "id": "53de2f9da4e3924e363afe378c185721cb9a3eda16beed000b5b56001206c9f7"
+  },
+  {
+   "pubkey": "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e",
+   "created_at": 1700000001,
+   "kind": 36669,
+   "tags": [
+    [
+     "d",
+     "2026-11-21"
+    ],
+    [
+     "alt",
+     "x \"y\" \n z"
+    ]
+   ],
+   "content": "plain",
+   "id": "40d8ae2c2e299865a8e1eace7fe9ff7b3c88ad43106c11572f0088a33e2a1efc"
+  },
+  {
+   "pubkey": "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e",
+   "created_at": 1700000002,
+   "kind": 36669,
+   "tags": [
+    [
+     "d",
+     "2026-11-21"
+    ],
+    [
+     "alt",
+     "x \"y\" \n z"
+    ]
+   ],
+   "content": "quote \" backslash \\ slash /",
+   "id": "bd2366069b27f204257830b4a4ccd7cf56020778a6296fe0c76095226db8f354"
+  },
+  {
+   "pubkey": "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e",
+   "created_at": 1700000003,
+   "kind": 36669,
+   "tags": [
+    [
+     "d",
+     "2026-11-21"
+    ],
+    [
+     "alt",
+     "x \"y\" \n z"
+    ]
+   ],
+   "content": "line\nbreak\r\ttab\b\f",
+   "id": "c40fc46db3e18f56125d1fb329cfba9db9581075322646fdc870523b7b7c8ee7"
+  },
+  {
+   "pubkey": "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e",
+   "created_at": 1700000004,
+   "kind": 36669,
+   "tags": [
+    [
+     "d",
+     "2026-11-21"
+    ],
+    [
+     "alt",
+     "x \"y\" \n z"
+    ]
+   ],
+   "content": "ctrl \u0001\u001f ",
+   "id": "969b924ab18e5897c37d999f97bf88741f5f402bd872d2de9d61bd2535396ece"
+  },
+  {
+   "pubkey": "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e",
+   "created_at": 1700000005,
+   "kind": 36669,
+   "tags": [
+    [
+     "d",
+     "2026-11-21"
+    ],
+    [
+     "alt",
+     "x \"y\" \n z"
+    ]
+   ],
+   "content": "emoji 🙏 café",
+   "id": "f5cb9b430b714b160f14be7944af1c42be3ef8597195747bc1fc9fa6b7d98c5b"
+  },
+  {
+   "pubkey": "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e",
+   "created_at": 1700000006,
+   "kind": 36669,
+   "tags": [
+    [
+     "d",
+     "2026-11-21"
+    ],
+    [
+     "alt",
+     "x \"y\" \n z"
+    ]
+   ],
+   "content": "nul\u0000x",
+   "id": "ca8075acb9e3aaf2c82e80670b761ed10e43d394da3643014d8b3e131dd18d13"
+  },
+  {
+   "pubkey": "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e",
+   "created_at": 1700000007,
+   "kind": 36669,
+   "tags": [
+    [
+     "d",
+     "2026-11-21"
+    ],
+    [
+     "alt",
+     "x \"y\" \n z"
+    ]
+   ],
+   "content": "  ",
+   "id": "29b321f69c7a0fe73e9bb19b61229bcd2a5e01ee840f8dea126aa666a5b47807"
+  }
+ ],
+ "nip19": [
+  {
+   "hex": "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e",
+   "npub": "npub10elfcs4fr0l0r8af98jlmgdh9c8tcxjvz9qkw038js35mp4dma8qzvjptg"
+  },
+  {
+   "secretHex": "67dea2ed018072d675f5415ecfaed7d2597555e202d85b3d65ea4e58d2d92ffa",
+   "nsec": "nsec1vl029mgpspedva04g90vltkh6fvh240zqtv9k0t9af8935ke9laqsnlfe5",
+   "pubkeyHex": "7e7e9c42a91bfef19fa929e5fda1b72e0ebc1a4c1141673e2794234d86addf4e"
+  }
+ ]
+}

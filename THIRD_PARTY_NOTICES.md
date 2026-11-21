@@ -1,13 +1,17 @@
 # Third-Party Notices
 
-Grateful Day iOS is licensed under the MIT License, Copyright (c) 2026 Seth Sager (see [LICENSE](LICENSE)). That covers original Grateful Day iOS code only. The components below keep their own copyright and license, reproduced here as their licenses require.
+Grateful Day iOS is an independent project owned by Seth Sager and licensed under the MIT License, Copyright (c) 2026 Seth Sager (see [LICENSE](LICENSE)). It is not a fork or derivative of Wisp or Zap Cooking, and that license covers original Grateful Day iOS code.
+
+The components below are used in Grateful Day iOS but are not owned by Seth Sager. Each keeps its own copyright and license, reproduced here as those licenses require. Their notices cover only the files listed in each section, not the rest of Grateful Day iOS.
 
 ## 1. Wisp iOS: five cryptography and encoding files
 
 - **Source:** [barrydeen/wisp-ios](https://github.com/barrydeen/wisp-ios), `main` at commit `914febaf597fc044a680ead632931009b21d641a` (fetched 2026-11-21).
 - **Author:** Barry Deen. Git history shows these five files were written and committed by Barry Deen alone.
 - **License:** MIT, as stated in the upstream README §License, which reproduces the full license text below. The upstream repository has no separate LICENSE file; Barry Deen's Android sibling project [barrydeen/wisp](https://github.com/barrydeen/wisp) carries the same MIT license as a LICENSE file.
-- **Status:** these files are **not yet in this repository**. Seth asked for licensing and provenance to be verified before any third-party crypto code comes in, so they arrive in the Phase 0 PR, stacked on this one, copied verbatim from the upstream blobs listed here. Each copied file will carry a header naming its source path, the upstream commit, and Barry Deen's copyright line. Any later change will be marked with a dated "Modified for Grateful Day" note.
+- **Scope of the grant:** the README's MIT statement was added in upstream commit `06b99cd` ("init wisp-ios"), the same commit that introduced all five files, and the README has had no other commit since. Every upstream revision of the five files (`06b99cd`, `ab25bcd`, and for `Bech32.swift` also `f007f61`) was made by Barry Deen while that statement was in place.
+- **What this notice covers:** only the five files in the table. Barry Deen's copyright and this license apply to those files, not to Grateful Day iOS as a whole. No other Wisp or Zap Cooking code is used, and none may be added without separate authorization.
+- **Status:** included in `Sources/NostrCore/Wisp/`, copied verbatim from the upstream blobs listed below. Each file starts with a header naming its source path, the upstream commit and blob, and Barry Deen's copyright line; everything after the header is unmodified (the file body hashes to the blob in the table). Any later change will be marked with a dated "Modified for Grateful Day" note.
 
 | File | Upstream path | Upstream blob (git) | Lines |
 |---|---|---|---|
@@ -46,7 +50,7 @@ SOFTWARE.
 ## 2. swift-secp256k1
 
 - **Source:** [21-DOT-DEV/swift-secp256k1](https://github.com/21-DOT-DEV/swift-secp256k1), used as a Swift Package Manager dependency (product `P256K`), not vendored into this repository.
-- **Version these notices match:** `0.23.0` (commit `21d46dd1d11737b77d15bd23468f989b24bc7f40`). The Phase 0 PR pins the exact version. If it pins a different one, sections 2–4 are re-taken from that version.
+- **Version:** pinned `exact: "0.23.0"` in `Package.swift` (commit `21d46dd1d11737b77d15bd23468f989b24bc7f40`). Sections 2–4 are taken from this version; changing the pin means re-taking them.
 - **License:** MIT. Text below is the LICENSE file at `0.23.0`.
 
 ```
@@ -354,3 +358,36 @@ This product contains a derivation of various files from SwiftNIO.
    See the License for the specific language governing permissions and
    limitations under the License.
 ```
+
+## 5. Test data and bundled content
+
+- **NIP-44 test vectors:** `Tests/NostrCoreTests/Resources/nip44.vectors.json`, used only by tests. Source: [`paulmillr/nip44/javascript/test/nip44.vectors.json`](https://github.com/paulmillr/nip44/blob/671a1f04bcfacaf125b0db68adc45bc9ce0e763b/javascript/test/nip44.vectors.json) at commit `671a1f04bcfacaf125b0db68adc45bc9ce0e763b`, git blob `8be2b7b`. That file is byte-identical to the copy at the repository root, and its sha256 (`269ed0f6…5040`) equals the checksum NIP-44 publishes; a test checks it. Author: Paul Miller, who wrote the NIP-44 spec and its vectors. License: the **Unlicense**, from `javascript/LICENSE` in that repository (text below). Note that `javascript/package.json` declares `"license": "MIT"`; both terms permit including the file. The repository root declares no license, which is why the `javascript/` copy is cited.
+
+```
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <https://unlicense.org>
+```
+- **Daily Wisdom texts:** `Sources/GratefulDayCore/Resources/wisdom.json` (ships in the app) is exported from Grateful Day's own web app (`spe1020/gratefulday`, MIT, © 2026 Seth Sager). The quoted passages are public-domain texts and translations, attributed per item in each item's `provenance`; the interpretations and prompts are Grateful Day's own writing.
+- **Web interop fixtures:** `Tests/GratefulDayCoreTests/Fixtures/` and `Tests/NostrCoreTests/Resources/nostr_tools_cases.json` were generated by running Grateful Day's own web code (`spe1020/gratefulday`, MIT, © 2026 Seth Sager) with nostr-tools (Unlicense) and Nostrify — outputs only, no code copied.
