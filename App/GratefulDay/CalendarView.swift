@@ -48,6 +48,7 @@ struct CalendarView: View {
 }
 
 private struct CalendarContent: View {
+    @Environment(JournalStore.self) private var store
     @Bindable var model: CalendarModel
 
     @Binding var selection: AppTab
@@ -79,7 +80,7 @@ private struct CalendarContent: View {
             switch model.loadState {
             case .readFailed:
                 VStack(alignment: .leading, spacing: GDSpacing.small) {
-                    Text(JournalUnavailableView.failedMessage)
+                    Text(JournalUnavailableView.failedText(removalIncomplete: store.removalIncomplete))
                         .font(GDFont.body)
                         .foregroundStyle(GDColor.foreground)
                         .fixedSize(horizontal: false, vertical: true)
@@ -199,6 +200,7 @@ private struct DayCell: View {
 
 /// A past day's reflection, read-only (web `isPast`): no edit control.
 struct DayDetailView: View {
+    @Environment(JournalStore.self) private var store
     let dateString: String
     let repository: JournalRepository
     @State private var notes: [String]?
@@ -216,7 +218,7 @@ struct DayDetailView: View {
                         .accessibilityAddTraits(.isHeader)
                 }
                 if failed {
-                    Text(JournalUnavailableView.failedMessage)
+                    Text(JournalUnavailableView.failedText(removalIncomplete: store.removalIncomplete))
                         .font(GDFont.body)
                         .foregroundStyle(GDColor.foreground)
                     Button("Try again") { load() }

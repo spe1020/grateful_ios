@@ -39,8 +39,11 @@ final class JournalStore {
 
     let location: StoreLocation
 
-    init(location: StoreLocation = .standard) {
+    private let defaults: UserDefaults
+
+    init(location: StoreLocation = .standard, defaults: UserDefaults = .standard) {
         self.location = location
+        self.defaults = defaults
     }
 
     var container: ModelContainer? {
@@ -113,6 +116,11 @@ final class JournalStore {
     /// reopened and false is returned; the caller says "Couldn't remove
     /// your reflections. Try again."
     func removeAllData() -> Bool {
+        // Recorded before anything is deleted, and kept across relaunches:
+        // a folder delete can remove some files before it fails, so from
+        // here until a clean, reopened store, "Nothing has been deleted"
+        // would be untrue (Seth, Audit #13 review).
+        removalIncomplete = true
         state = .waitingForUnlock
         do {
             if FileManager.default.fileExists(atPath: location.directory.path) {
@@ -124,8 +132,22 @@ final class JournalStore {
             return false
         }
         openIfPossible(protectedDataAvailable: true)
-        return true
+        if container != nil { removalIncomplete = false }
+        return container != nil
     }
+
+    /// A "Remove account and local data" started but didn't finish cleanly.
+    /// A non-sensitive flag in UserDefaults so it survives a relaunch.
+    var removalIncomplete: Bool {
+        get { defaults.bool(forKey: Self.removalIncompleteKey) }
+        set {
+            defaults.set(newValue, forKey: Self.removalIncompleteKey)
+            removalIncompleteVersion += 1
+        }
+    }
+    /// Bumped on every change so views observing the store redraw.
+    private(set) var removalIncompleteVersion = 0
+    static let removalIncompleteKey = "journal.removalIncomplete"
 
     /// Set when the save before the device locked failed (Audit M2 I2).
     /// Unsaved text is still held by the editor, which retries on unlock.

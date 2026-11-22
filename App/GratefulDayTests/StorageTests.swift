@@ -200,6 +200,20 @@ final class StorageTests: XCTestCase {
 
     // MARK: - Criteria 7 and 9
 
+    func testStatementsArePrepsFinalCopyInTheP11Order() {
+        XCTAssertEqual(PrivacyCopy.backupExclusionFailedStatement,
+            "Until you connect an account, nothing you write is published. Your reflections are saved on this iPhone. We weren't able to keep them out of iCloud and iPhone backups on this iPhone, so they may be included in one. We'll keep trying each time you open the app. If you lose or replace this iPhone, or delete the app, they may not be recoverable.")
+        XCTAssertEqual(PrivacyCopy.neutralStatement,
+            "Until you connect an account, nothing you write is published. Your reflections are saved only on this iPhone. If you lose or replace this iPhone, or delete the app, they may not be recoverable.")
+        XCTAssertEqual(PrivacyCopy.statement(exclusionChecked: false, exclusionFailed: false), PrivacyCopy.neutralStatement)
+        XCTAssertEqual(PrivacyCopy.statement(exclusionChecked: true, exclusionFailed: false), PrivacyCopy.preAccountStatement)
+        XCTAssertEqual(PrivacyCopy.statement(exclusionChecked: false, exclusionFailed: true), PrivacyCopy.backupExclusionFailedStatement)
+        XCTAssertEqual(PrivacyCopy.statement(exclusionChecked: true, exclusionFailed: true), PrivacyCopy.backupExclusionFailedStatement,
+                       "a later failure wins over an earlier success")
+        XCTAssertEqual(JournalUnavailableView.failedMessage, "Your journal couldn't be opened just now. Nothing has been deleted.")
+        XCTAssertEqual(JournalUnavailableView.repeatedFailureMessage, "If this keeps happening, try restarting your iPhone.")
+    }
+
     func testPreAccountStatementIsTheApprovedCopy() {
         XCTAssertEqual(PrivacyCopy.preAccountStatement,
             "Until you connect an account, nothing you write is published. Your reflections are saved only on this iPhone and aren't included in iCloud or iPhone backups. If you lose or replace this iPhone, or delete the app, they can't be recovered.")
