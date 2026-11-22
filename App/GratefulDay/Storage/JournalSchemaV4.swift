@@ -1,8 +1,8 @@
 import Foundation
 import SwiftData
 
-/// M5a: entries are unique per (owner, date) (design r3.1, Chief P17), and
-/// the connected-account marker is stored in the journal (design §3, §7).
+/// M5a (FROZEN, as shipped in #12): entries unique per (owner, date), and the
+/// connected-account marker. Never edit; add a new version instead.
 enum JournalSchemaV4: VersionedSchema {
     static let versionIdentifier = Schema.Version(4, 0, 0)
     static var models: [any PersistentModel.Type] {
@@ -86,19 +86,4 @@ enum JournalSchemaV4: VersionedSchema {
         }
         var state: AccountMarkerState { AccountMarkerState(rawValue: stateRaw) ?? .connected }
     }
-}
-
-enum AccountMarkerState: String, Codable, Sendable {
-    case connected, signedOut
-}
-
-/// Where an entry stands relative to Nostr. Stored as a string, so new
-/// values need no schema change.
-enum SyncState: String, Codable, Sendable {
-    case localOnly
-    /// Matches the newest relay version (`remoteEventID`).
-    case synced
-    /// The newest relay version can't be decrypted or decoded: unknown,
-    /// never shown as empty, never written over (interop §0, §4.1).
-    case blocked
 }

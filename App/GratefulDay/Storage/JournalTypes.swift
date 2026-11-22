@@ -1,0 +1,30 @@
+import Foundation
+
+enum AccountMarkerState: String, Codable, Sendable {
+    case connected, signedOut
+}
+
+/// Where an entry stands relative to Nostr. Stored as a string, so new
+/// values need no schema change.
+enum SyncState: String, Codable, Sendable {
+    /// Never published, or edited locally since the last synced version
+    /// (a pending local edit when `remoteEventID` is set).
+    case localOnly
+    /// Matches the newest relay version (`remoteEventID`).
+    case synced
+    /// The newest relay version can't be decrypted or decoded: unknown,
+    /// never shown as empty, never written over (interop §0, §4.1).
+    case blocked
+    /// A relay version this row didn't base on arrived while it had pending
+    /// edits. Both texts are kept (the remote one in `EarlierVersion`);
+    /// nothing is published until the person resolves it (M6).
+    case conflict
+}
+
+/// Why an `EarlierVersion` was kept.
+enum EarlierVersionReason: String, Codable, Sendable {
+    /// Local text replaced by a newer relay version (archived first).
+    case replacedByRemote
+    /// A relay version kept aside because the local row had pending edits.
+    case remoteInConflict
+}

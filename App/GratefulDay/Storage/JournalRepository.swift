@@ -10,6 +10,11 @@ import GratefulDayCore
 /// out). Rows the person sees and writes are guest rows plus the active
 /// owner's rows. Rows owned by any other account are read-only and are never
 /// edited, merged or counted here.
+enum RepositoryError: Error, Equatable {
+    /// The day's relay version couldn't be read; its row is read-only.
+    case dayIsBlocked
+}
+
 @MainActor
 struct JournalRepository {
     let context: ModelContext
@@ -47,9 +52,14 @@ struct JournalRepository {
         let notes = EntryNotes.normalize(text)
         let entry: JournalEntry
         if let existing = try self.entry(for: day.dateString) {
-            existing.notesText = notes
-            existing.updatedAt = now
-            existing.deletedAt = nil
+            guard existing.syncState != .blocked else { throw RepositoryError.dayIsBlocked }
+            if existing.notesText != notes || existing.deletedAt != nil {
+                existing.notesText = notes
+                existing.updatedAt = now
+                existing.deletedAt = nil
+                // An edit after sync is a pending local edit (M5b plan).
+                if existing.syncState == .synced { existing.syncStateRaw = SyncState.localOnly.rawValue }
+            }
             entry = existing
         } else {
             entry = JournalEntry(
@@ -67,6 +77,7 @@ struct JournalRepository {
     /// web's NIP-09 deletion; the text itself is cleared now.
     func delete(_ day: JournalDay, now: Date = .now) throws {
         guard let entry = try entry(for: day.dateString), entry.deletedAt == nil else { return }
+        guard entry.syncState != .blocked else { throw RepositoryError.dayIsBlocked }
         entry.notesText = ""
         entry.deletedAt = now
         entry.updatedAt = now
@@ -174,6 +185,22 @@ struct JournalRepository {
         guard try !flag(name) else { return }
         context.insert(JournalFlag(name: name, setAt: now))
         try context.save()
+    }
+
+    // MARK: - Earlier versions (local archive)
+
+    /// Kept-aside versions the person should see (P22), for the active owner
+    /// (or guest) only.
+    func surfacedEarlierVersions() throws -> [EarlierVersion] {
+        let all = try context.fetch(FetchDescriptor<EarlierVersion>(
+            predicate: #Predicate { $0.surfaced && !$0.dismissed },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))
+        return all.filter { $0.ownerPubkey == activeOwner }
+    }
+
+    /// The editor's row for a date is read-only while its relay version is unreadable.
+    func isBlocked(_ dateString: String) throws -> Bool {
+        try entry(for: dateString)?.syncState == .blocked
     }
 
     /// The day an entry belongs to, rebuilt from its stored identity.
