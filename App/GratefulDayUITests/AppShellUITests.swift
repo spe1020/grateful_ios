@@ -202,6 +202,47 @@ final class AppShellUITests: XCTestCase {
         clear(app)
     }
 
+    /// Prep F1/F4/F2/F7: create a journal key (always confirmed), decline the
+    /// backup (one extra confirmation), then sign out: the journal stays.
+    func testCreateKeyDeclineBackupThenSignOutKeepsTheJournal() {
+        let app = XCUIApplication()
+        app.launch()
+        let editor = app.textViews["today.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        clear(app)
+        editor.tap()
+        editor.typeText("Kept after sign-out")
+        app.buttons["today.keyboardDone"].tap()
+        Thread.sleep(forTimeInterval: 1)
+
+        app.tabBars.buttons["Settings"].tap()
+        app.buttons["settings.account"].tap()
+        if app.buttons["account.signOut"].waitForExistence(timeout: 3) {
+            // Left over from an earlier run: sign out first.
+            app.buttons["account.signOut"].tap()
+            app.buttons["signOut.confirm"].tap()
+        }
+        XCTAssertTrue(app.buttons["account.usedBefore"].waitForExistence(timeout: 5), "restore comes first")
+        app.buttons["account.create"].tap()
+        XCTAssertTrue(app.staticTexts["Make a new journal key?"].waitForExistence(timeout: 5))
+        app.buttons["Make a new key"].tap()
+
+        XCTAssertTrue(app.buttons["backup.no"].waitForExistence(timeout: 5), "the backup offer follows")
+        XCTAssertTrue(app.buttons["backup.yes"].exists)
+        app.buttons["backup.no"].tap()
+        app.buttons["Continue without backup"].tap()
+
+        XCTAssertTrue(app.buttons["account.signOut"].waitForExistence(timeout: 5))
+        app.buttons["account.signOut"].tap()
+        XCTAssertTrue(app.staticTexts["signOut.noBackup"].waitForExistence(timeout: 5), "warns: no backup")
+        app.buttons["signOut.confirm"].tap()
+        XCTAssertTrue(app.buttons["account.usedBefore"].waitForExistence(timeout: 5), "signed out")
+
+        app.tabBars.buttons["Today"].tap()
+        XCTAssertEqual(app.textViews["today.editor"].value as? String, "Kept after sign-out", "the journal stays")
+        clear(app)
+    }
+
     /// At the largest text sizes, scrolled content passes under the
     /// translucent tab bar, and the audit's screenshot then measures text
     /// against the bar's blur. Only that contrast case is skipped; every

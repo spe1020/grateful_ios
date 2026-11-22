@@ -117,6 +117,18 @@ struct JournalRepository {
         Set(try otherAccountReflections(from: start, through: end).map(\.dateString))
     }
 
+    /// Days with another account's reflection (Prep: "N earlier reflections
+    /// from another account are kept on this iPhone").
+    func otherAccountDayCount() throws -> Int {
+        Set(try otherAccountReflections().map(\.dateString)).count
+    }
+
+    /// Every reflection on this iPhone, any owner (for "Remove account and
+    /// local data", which removes them all).
+    func allReflectionCount() throws -> Int {
+        try reflections(from: nil, through: nil).count
+    }
+
     /// Read-only text another account wrote on a date, or nil.
     func otherAccountText(for dateString: String) throws -> String? {
         try otherAccountReflections(from: dateString, through: dateString).first?.notesText
@@ -149,6 +161,13 @@ struct JournalRepository {
         var d = FetchDescriptor<JournalFlag>(predicate: #Predicate { $0.name == name })
         d.fetchLimit = 1
         return try !context.fetch(d).isEmpty
+    }
+
+    func clearFlag(_ name: String) throws {
+        for f in try context.fetch(FetchDescriptor<JournalFlag>(predicate: #Predicate { $0.name == name })) {
+            context.delete(f)
+        }
+        try context.save()
     }
 
     func setFlag(_ name: String, now: Date = .now) throws {

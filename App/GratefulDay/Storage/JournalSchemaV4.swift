@@ -70,6 +70,8 @@ enum JournalSchemaV4: VersionedSchema {
         var setAt: Date
         init(name: String, setAt: Date) { self.name = name; self.setAt = setAt }
         static let reminderOfferShown = "reminderOfferShown"
+        /// Prep F3: a restore found no backup yet; Today shows a quiet line.
+        static let restorePending = "restorePending"
     }
 
     /// Which account this install is connected to (non-secret; design §3).

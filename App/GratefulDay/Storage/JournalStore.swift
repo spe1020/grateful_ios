@@ -107,6 +107,26 @@ final class JournalStore {
         if !prepared.protectionApplied { protectionFailed = true }
     }
 
+    /// Delete the journal store files ("Remove account and local data",
+    /// design §6), then open a fresh, empty store. Only ever called after
+    /// the person's explicit confirmation. On failure the old store is
+    /// reopened and false is returned; the caller says "Couldn't remove
+    /// your reflections. Try again."
+    func removeAllData() -> Bool {
+        state = .waitingForUnlock
+        do {
+            if FileManager.default.fileExists(atPath: location.directory.path) {
+                try FileManager.default.removeItem(at: location.directory)
+            }
+        } catch {
+            StorageLog.error("Removing the journal store failed", error: error)
+            openIfPossible(protectedDataAvailable: true)
+            return false
+        }
+        openIfPossible(protectedDataAvailable: true)
+        return true
+    }
+
     /// Set when the save before the device locked failed (Audit M2 I2).
     /// Unsaved text is still held by the editor, which retries on unlock.
     private(set) var lockSaveFailed = false

@@ -7,6 +7,8 @@ struct SettingsPlaceholderView: View {
     var body: some View {
         NavigationStack {
             List {
+                NavigationLink("Account") { AccountView() }
+                    .accessibilityIdentifier("settings.account")
                 NavigationLink("Privacy") { PrivacyView() }
                     .accessibilityIdentifier("settings.privacy")
                 NavigationLink {
