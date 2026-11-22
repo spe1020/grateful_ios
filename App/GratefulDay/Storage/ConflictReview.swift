@@ -59,17 +59,41 @@ struct ConflictReview {
             sortBy: [SortDescriptor(\.dateString)]))
     }
 
-    /// The newest conflict archive for a day: the account's text
+    /// The newest open conflict archive for a day: the account's text
     /// (`.remoteInConflict`), or a marker that it couldn't be read
-    /// (`.localInConflict`).
-    private func latestArchive(_ dateString: String) throws -> EarlierVersion? {
+    /// (`.localInConflict`). Archives of an earlier, resolved conflict
+    /// (dismissed, or already the day's base) never stand in for a later
+    /// one (Audit #16 M1).
+    private func latestArchive(_ dateString: String, row: JournalEntry) throws -> EarlierVersion? {
+        try allArchives(dateString).first { archive in
+            guard !archive.dismissed else { return false }
+            if let id = archive.eventId, id == row.remoteEventID, archive.reason == .remoteInConflict { return false }
+            // Archives written before V7 have no eventCreatedAt, so only the
+            // id and dismissed checks apply to them. Accepted as a narrow
+            // risk (Chief P34): no user stores predate V7.
+            if let at = archive.eventCreatedAt, let base = row.remoteCreatedAt, archive.reason == .remoteInConflict,
+               at <= base { return false }
+            return true
+        }
+    }
+
+    /// A day in conflict that this screen can show: this iPhone still has
+    /// text for it. A day deleted here but changed elsewhere (or deleted
+    /// elsewhere but changed here) has no copy for these choices yet, and
+    /// stays a conflict: nothing is published for it (Audit #16 M1/M2;
+    /// Chief P32, copy in Prep's §7 for the next PR).
+    private func isShowable(_ row: JournalEntry) -> Bool {
+        row.deletedAt == nil && !EntryNotes.split(row.notesText).isEmpty
+    }
+
+    private func allArchives(_ dateString: String) throws -> [EarlierVersion] {
         let o: String? = owner
         let remote = EarlierVersionReason.remoteInConflict.rawValue, local = EarlierVersionReason.localInConflict.rawValue
         return try context.fetch(FetchDescriptor<EarlierVersion>(
             predicate: #Predicate {
                 $0.ownerPubkey == o && $0.dateString == dateString && ($0.reasonRaw == remote || $0.reasonRaw == local)
             },
-            sortBy: [SortDescriptor(\.createdAt, order: .reverse)])).first
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))
     }
 
     private func wasSaved(_ dateString: String) throws -> Bool {
@@ -82,8 +106,8 @@ struct ConflictReview {
     /// and it stays a conflict, so nothing is published for it.
     func load() throws -> Days {
         var days = Days()
-        for row in try conflictRows() {
-            guard let archive = try latestArchive(row.dateString) else { continue }
+        for row in try conflictRows() where isShowable(row) {
+            guard let archive = try latestArchive(row.dateString, row: row) else { continue }
             if archive.reason == .localInConflict {
                 days.blocked.append(Blocked(dateString: row.dateString, iPhoneText: row.notesText))
             } else {
@@ -105,8 +129,8 @@ struct ConflictReview {
     /// Apply a choice per day. Days not in `choices`, blocked days and days
     /// no longer in conflict are left alone.
     func apply(_ choices: [String: Choice]) throws {
-        for row in try conflictRows() {
-            guard let choice = choices[row.dateString], let archive = try latestArchive(row.dateString),
+        for row in try conflictRows() where isShowable(row) {
+            guard let choice = choices[row.dateString], let archive = try latestArchive(row.dateString, row: row),
                   archive.reason == .remoteInConflict else { continue }
             let account = archive.notesText, iPhone = row.notesText
             switch choice {

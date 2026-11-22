@@ -316,4 +316,101 @@ final class ConflictReviewTests: XCTestCase {
         XCTAssertTrue(rows[1].isPrivate)
         XCTAssertEqual(EntryNotes.split(rows[1].notesText), ["Account note", "iPhone note"])
     }
+
+    // MARK: - Audit FAIL at 7f2dc6f
+
+    /// M1: a resolved conflict's archive is never offered for a later one.
+    func testResolvedArchiveIsNotReusedForLaterDeletionConflict() throws {
+        let event = try conflict("2026-11-20", local: "mine", account: "old account text", at: 500)
+        try review.apply(["2026-11-20": .keepThisIPhone])
+        XCTAssertEqual(try row("2026-11-20").syncState, .localOnly)
+        // Before this iPhone's edit is sent, another device deletes the day.
+        let k5 = try EntryDeletion.template(pubkey: owner, dateString: "2026-11-20", eventId: event.id)
+            .signed(privateKey: secret, createdAt: 900)
+        try RemoteImporter(context: context, owner: owner)
+            .apply(RemoteJournal.days(from: [event, k5], owner: owner, privateKey: secret), zone: zone)
+        XCTAssertEqual(try row("2026-11-20").syncState, .conflict)
+        XCTAssertTrue(try review.load().items.isEmpty, "no stale 'Your account' text")
+        XCTAssertFalse(try review.listsDay("2026-11-20"))
+        try review.apply(["2026-11-20": .keepAccount])
+        XCTAssertEqual(try row("2026-11-20").syncState, .conflict, "never marked synced with stale text")
+        XCTAssertEqual(try row("2026-11-20").notesText, "mine")
+    }
+
+    /// M1: a second, newer remote version after a resolved conflict is shown,
+    /// not the first one.
+    func testSecondConflictShowsTheNewerAccountText() throws {
+        try conflict("2026-11-20", local: "mine", account: "first", at: 500)
+        try review.apply(["2026-11-20": .keepThisIPhone])
+        let second = try remote("2026-11-20", "second", at: 900)
+        try RemoteImporter(context: context, owner: owner)
+            .apply(RemoteJournal.days(from: [second], owner: owner, privateKey: secret), zone: zone)
+        XCTAssertEqual(try review.load().items.map(\.accountText), ["second"])
+    }
+
+    /// M2: deleted on this iPhone, edited elsewhere: kept off the screen,
+    /// never "kept" into an empty pending day; it stays a conflict.
+    func testLocalDeleteVsRemoteEditIsNotOfferedOrChanged() throws {
+        let base = try remote("2026-11-20", "v1", at: 100)
+        let d = day("2026-11-20")
+        let entry = JournalEntry(dateString: d.dateString, dayOfYear: d.dayOfYear, publishedAt: d.publishedAt,
+                                 timeZoneID: zone.identifier, notesText: "", now: t0, ownerPubkey: owner)
+        entry.remoteEventID = base.id; entry.remoteCreatedAt = 100; entry.deletedAt = t0
+        context.insert(entry); try context.save()
+        let edit = try remote("2026-11-20", "edited elsewhere", at: 200)
+        try RemoteImporter(context: context, owner: owner)
+            .apply(RemoteJournal.days(from: [base, edit], owner: owner, privateKey: secret), zone: zone)
+        XCTAssertEqual(try row("2026-11-20").syncState, .conflict)
+        XCTAssertTrue(try review.load().items.isEmpty)
+        XCTAssertFalse(try review.listsDay("2026-11-20"))
+        try review.apply(["2026-11-20": .keepThisIPhone])
+        _ = try review.keepBothForAll()
+        let r = try row("2026-11-20")
+        XCTAssertNotNil(r.deletedAt, "the person's delete stands")
+        XCTAssertEqual(r.syncState, .conflict, "nothing published until Prep's copy lands")
+        XCTAssertEqual(try earlier("2026-11-20"), ["edited elsewhere"], "the account's text is kept")
+    }
+
+    /// P34: deleted on the account, edited here: off the screen, unchanged.
+    func testAccountDeleteVsLocalEditIsNotOfferedOrChanged() throws {
+        let base = try remote("2026-11-20", "v1", at: 100)
+        let d = day("2026-11-20")
+        let entry = JournalEntry(dateString: d.dateString, dayOfYear: d.dayOfYear, publishedAt: d.publishedAt,
+                                 timeZoneID: zone.identifier, notesText: "edited here", now: t0, ownerPubkey: owner)
+        entry.remoteEventID = base.id; entry.remoteCreatedAt = 100
+        context.insert(entry); try context.save()
+        let k5 = try EntryDeletion.template(pubkey: owner, dateString: "2026-11-20", eventId: base.id)
+            .signed(privateKey: secret, createdAt: 200)
+        try RemoteImporter(context: context, owner: owner)
+            .apply(RemoteJournal.days(from: [base, k5], owner: owner, privateKey: secret), zone: zone)
+        XCTAssertEqual(try row("2026-11-20").syncState, .conflict)
+        XCTAssertTrue(try review.load().items.isEmpty)
+        XCTAssertFalse(try review.listsDay("2026-11-20"))
+        try review.apply(["2026-11-20": .keepAccount])
+        _ = try review.keepBothForAll()
+        let r = try row("2026-11-20")
+        XCTAssertEqual(r.notesText, "edited here")
+        XCTAssertNil(r.deletedAt)
+        XCTAssertEqual(r.syncState, .conflict)
+    }
+
+    /// M1/P34: an open conflict the account then deletes. The earlier
+    /// account text is no longer the account's; the day leaves the screen.
+    func testOpenConflictThenAccountDeleteLeavesTheScreen() throws {
+        let event = try conflict("2026-11-20", local: "mine", account: "account text", at: 500)
+        let k5 = try EntryDeletion.template(pubkey: owner, dateString: "2026-11-20", eventId: event.id)
+            .signed(privateKey: secret, createdAt: 900)
+        try RemoteImporter(context: context, owner: owner)
+            .apply(RemoteJournal.days(from: [event, k5], owner: owner, privateKey: secret), zone: zone)
+        XCTAssertEqual(try row("2026-11-20").syncState, .conflict)
+        XCTAssertTrue(try review.load().items.isEmpty, "the deleted account text isn't offered")
+        XCTAssertFalse(try review.listsDay("2026-11-20"))
+        try review.apply(["2026-11-20": .keepAccount])
+        XCTAssertEqual(try row("2026-11-20").syncState, .conflict, "never marked synced with deleted text")
+        XCTAssertEqual(try row("2026-11-20").notesText, "mine")
+    }
+
+    private func earlier(_ date: String) throws -> [String] {
+        try context.fetch(FetchDescriptor<EarlierVersion>()).filter { $0.dateString == date && $0.reason == .remoteInConflict }.map(\.notesText)
+    }
 }
