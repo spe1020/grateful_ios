@@ -48,12 +48,23 @@ struct RelayFetcher: Sendable {
     private func fetchAll(_ filter: RelayFilter, from url: URL) async -> (URL, [NostrEvent], RelayOutcome) {
         let connection: RelayConnection
         do { connection = try await transport.connect(url) } catch { return (url, [], .failed("connect")) }
-        // One connection for every page; closed once, here.
+        // One connection for every page; closed once, here. Cancelling the
+        // fetch (the app went to the background) closes it at once, which
+        // also ends a pending receive, so no socket outlives the foreground.
         defer { connection.close() }
+        return await withTaskCancellationHandler {
+            await pages(filter, from: url, on: connection)
+        } onCancel: {
+            connection.close()
+        }
+    }
+
+    private func pages(_ filter: RelayFilter, from url: URL, on connection: RelayConnection) async -> (URL, [NostrEvent], RelayOutcome) {
         var seen: [String: NostrEvent] = [:]
         var until: Int? = nil
         var page = 0
         while true {
+            if Task.isCancelled { return (url, Array(seen.values), .failed("cancelled")) }
             page += 1
             var f = filter
             f.until = until
@@ -79,6 +90,7 @@ struct RelayFetcher: Sendable {
 
     private func fetchPage(_ filter: RelayFilter, on connection: RelayConnection,
                            subscription: String) async -> ([NostrEvent], RelayOutcome) {
+        if Task.isCancelled { return ([], .failed("cancelled")) }
         do {
             try await connection.send(filter.reqMessage(subscription: subscription))
         } catch {
@@ -109,6 +121,7 @@ struct RelayFetcher: Sendable {
             }
             let first = await group.next() ?? nil
             group.cancelAll()
+            if Task.isCancelled { connection.close(); return (collected.events, .failed("cancelled")) }
             // The socket stays open across pages; each page ends its own
             // subscription with CLOSE (Audit, #14 early read). Only an
             // unresolved page closes it, which also ends the pending

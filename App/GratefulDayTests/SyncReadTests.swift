@@ -67,6 +67,23 @@ final class SyncReadTests: XCTestCase {
         XCTAssertEqual(sync.relays?.write, RelaySet.defaultWrite)
     }
 
+    /// Chief P26: stopping (background) closes every relay and imports nothing.
+    func testStoppedSyncClosesRelaysAndImportsNothing() async throws {
+        let relays = RelaySet.defaultRead.map { FakeRelay($0.host!, behavior: .silent) }
+        let config = ModelConfiguration(schema: JournalStore.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: JournalStore.schema, configurations: config)
+        let sync = SyncService(transport: fakes(relays))
+        sync.start(owner: owner, secret: secret, context: container.mainContext)
+        try await Task.sleep(for: .milliseconds(300))
+        let started = Date()
+        sync.stop()
+        while sync.status == .reading, Date().timeIntervalSince(started) < 5 { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertEqual(sync.status, .idle, "stopped, nothing imported")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5, "didn't wait out page timeouts")
+        for r in relays { XCTAssertGreaterThanOrEqual(r.closeCount, 1, "\(r.url) closed") }
+        XCTAssertTrue(try container.mainContext.fetch(FetchDescriptor<JournalEntry>()).isEmpty)
+    }
+
     func testOlderCopyFromLaggingRelayIsIgnored() throws {
         let config = ModelConfiguration(schema: JournalStore.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         let container = try ModelContainer(for: JournalStore.schema, configurations: config)

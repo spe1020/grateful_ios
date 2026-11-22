@@ -139,6 +139,23 @@ final class RelayFetchTests: XCTestCase {
         XCTAssertEqual(relay.closeCount, 1, "closed once, after the last page")
     }
 
+    /// Chief P26: a cancelled fetch (app backgrounded) closes its socket at
+    /// once rather than waiting out the page timeout, and isn't "answered".
+    func testCancelledFetchClosesConnectionPromptly() async {
+        let quiet = FakeRelay("quiet", behavior: .silent)
+        let f = fetcher([quiet], timeout: .seconds(30))
+        let started = Date()
+        let query = filter()
+        let url = quiet.url
+        let task = Task { await f.fetch(query, from: [url]) }
+        try? await Task.sleep(for: .milliseconds(200))
+        task.cancel()
+        let result = await task.value
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5, "didn't wait for the 30 s timeout")
+        XCTAssertNotEqual(result.outcomes[quiet.url], .answered)
+        XCTAssertGreaterThanOrEqual(quiet.closeCount, 1, "socket closed")
+    }
+
     func testTimeoutIsUnknownNotEmpty() async {
         let quiet = FakeRelay("quiet", behavior: .silent)
         let result = await fetcher([quiet], timeout: .milliseconds(200)).fetch(filter(), from: [quiet.url])

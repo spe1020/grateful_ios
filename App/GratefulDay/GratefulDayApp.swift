@@ -2,8 +2,8 @@ import SwiftUI
 import UIKit
 
 /// Grateful Day for iPhone. The journal is stored on this iPhone; the journal
-/// key, when there is one, is in the Keychain. Nothing here touches the
-/// network (publishing is M5b).
+/// key, when there is one, is in the Keychain. While an account is connected
+/// it reads the journal from relays in the foreground (M5b-1, read only).
 @main
 struct GratefulDayApp: App {
     @State private var store = JournalStore()
@@ -28,6 +28,8 @@ struct GratefulDayApp: App {
                 // protected data is available (storage recommendation §1, S2).
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     if phase == .active { openStore() }
+                    // No relay connection outlives the foreground (Chief P26).
+                    if phase == .background { sync.stop() }
                 }
                 .onReceive(NotificationCenter.default
                     .publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)
@@ -52,6 +54,6 @@ struct GratefulDayApp: App {
     /// M5b-1: read the connected account's journal (never publishes).
     private func readFromRelays() {
         guard let context = store.container?.mainContext, let key = account.connectedKey() else { return }
-        Task { await sync.run(owner: key.pubkey, secret: key.secret, context: context) }
+        sync.start(owner: key.pubkey, secret: key.secret, context: context)
     }
 }
