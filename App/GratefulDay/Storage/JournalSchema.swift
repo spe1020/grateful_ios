@@ -9,14 +9,15 @@ import SwiftData
 // and a store written by an older build would match no version and fail to
 // open. Never edit a frozen copy. Add a new version instead.
 //
-// The live models are JournalSchemaV5's; `JournalEntry`, `AcknowledgedMilestone`
+// The live models are JournalSchemaV6's; `JournalEntry`, `AcknowledgedMilestone`
 // and `JournalFlag` are typealiases to them.
 
-typealias JournalEntry = JournalSchemaV5.JournalEntry
-typealias AcknowledgedMilestone = JournalSchemaV5.AcknowledgedMilestone
-typealias JournalFlag = JournalSchemaV5.JournalFlag
-typealias AccountMarker = JournalSchemaV5.AccountMarker
-typealias EarlierVersion = JournalSchemaV5.EarlierVersion
+typealias JournalEntry = JournalSchemaV6.JournalEntry
+typealias AcknowledgedMilestone = JournalSchemaV6.AcknowledgedMilestone
+typealias JournalFlag = JournalSchemaV6.JournalFlag
+typealias AccountMarker = JournalSchemaV6.AccountMarker
+typealias EarlierVersion = JournalSchemaV6.EarlierVersion
+typealias OutboxEvent = JournalSchemaV6.OutboxEvent
 
 /// M2: the first shipped store.
 enum JournalSchemaV1: VersionedSchema {
@@ -113,7 +114,7 @@ enum JournalSchemaV3: VersionedSchema {
 
 enum JournalMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self, JournalSchemaV5.self]
+        [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self, JournalSchemaV5.self, JournalSchemaV6.self]
     }
     static var stages: [MigrationStage] {
         [
@@ -130,6 +131,8 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
             }),
             // M5b-1: adds the EarlierVersion archive only.
             .lightweight(fromVersion: JournalSchemaV4.self, toVersion: JournalSchemaV5.self),
+            // M5b-2: adds the outbox only.
+            .lightweight(fromVersion: JournalSchemaV5.self, toVersion: JournalSchemaV6.self),
         ]
     }
 }

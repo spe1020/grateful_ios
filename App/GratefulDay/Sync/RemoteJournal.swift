@@ -5,8 +5,10 @@ import GratefulDayCore
 /// What the relays hold for one day of the connected account (interop §1.4–1.7).
 enum RemoteDay: Equatable {
     case entry(text: String, isPrivate: Bool, eventId: String, createdAt: Int, event: NostrEvent)
-    /// A kind 5 covers the newest version (created_at ≤ deletion).
-    case deleted(at: Int)
+    /// A kind 5 covers the newest version (created_at ≤ deletion). `by` holds
+    /// the ids of the kind 5 events at that deletion time, so the importer
+    /// can tell this device's own deletion from another device's (P30 M1).
+    case deleted(at: Int, by: Set<String> = [])
     /// The newest version exists but can't be decrypted or decoded: unknown,
     /// never empty, never written over.
     case blocked(eventId: String, createdAt: Int)
@@ -21,7 +23,13 @@ enum RemoteJournal {
         var out: [String: RemoteDay] = [:]
         for (d, latest) in DailyEntry.latestPerDay(entries) {
             if EntryDeletion.isDeleted(latest, tombstones: tombstones) {
-                out[d] = .deleted(at: tombstones[EntryDeletion.address(pubkey: pubkey, dateString: d)] ?? latest.createdAt)
+                let address = EntryDeletion.address(pubkey: pubkey, dateString: d)
+                let at = tombstones[address] ?? latest.createdAt
+                let ids = events.filter {
+                    $0.kind == 5 && $0.pubkey == pubkey && $0.createdAt == at
+                        && $0.tags.contains { $0.count >= 2 && $0[0] == "a" && $0[1] == address }
+                }.map(\.id)
+                out[d] = .deleted(at: at, by: Set(ids))
                 continue
             }
             if DailyEntry.isPrivate(latest) {

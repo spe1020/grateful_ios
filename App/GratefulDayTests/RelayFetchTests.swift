@@ -16,6 +16,11 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
     private var waiter: CheckedContinuation<String, Error>?
     private let lock = NSLock()
     private(set) var requests: [[String: Any]] = []
+    /// How this relay answers an EVENT frame (M5b-2 publish tests).
+    enum OkReply { case accept, duplicate, reject, noticeOnly, otherId, silent }
+    var okReply: OkReply = .accept
+    /// Every EVENT frame received, as sent.
+    private(set) var publishedFrames: [String] = []
 
     init(_ host: String, events: [NostrEvent] = [], behavior: Behavior = .normal, pageCap: Int = 1000) {
         url = URL(string: "wss://\(host)")!
@@ -31,8 +36,25 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
 
     func send(_ text: String) async throws {
         if lock.withLock({ isClosed }) { throw URLError(.cancelled) }
-        guard let array = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any],
-              array.first as? String == "REQ", let sub = array[1] as? String, let f = array[2] as? [String: Any] else { return }
+        guard let array = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any] else { return }
+        if array.first as? String == "EVENT", array.count >= 2, let obj = array[1] as? [String: Any] {
+            lock.withLock { publishedFrames.append(text) }
+            if behavior == .silent { return }
+            let id = obj["id"] as? String ?? ""
+            switch okReply {
+            case .accept:
+                if let event = try? JSONDecoder().decode(NostrEvent.self, from: JSONSerialization.data(withJSONObject: obj)),
+                   !events.contains(where: { $0.id == id }) { events.append(event) }
+                push("[\"OK\",\"\(id)\",true,\"\"]")
+            case .duplicate: push("[\"OK\",\"\(id)\",true,\"duplicate: have it\"]")
+            case .reject: push("[\"OK\",\"\(id)\",false,\"blocked: no\"]")
+            case .noticeOnly: push("[\"NOTICE\",\"thanks\"]")
+            case .otherId: push("[\"OK\",\"\(String(repeating: "0", count: 64))\",true,\"\"]")
+            case .silent: break
+            }
+            return
+        }
+        guard array.first as? String == "REQ", let sub = array[1] as? String, let f = array[2] as? [String: Any] else { return }
         let index = lock.withLock { requests.append(f); return requests.count - 1 }
         switch behavior {
         case .silent, .refuseConnect: return
@@ -44,7 +66,12 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
         let cap = index < pageCaps.count ? pageCaps[index] : pageCap
         let limit = min(f["limit"] as? Int ?? 1000, cap)
         // Newest first; ties by id so a capped second is deterministic.
-        let matching = events.filter { kinds.contains($0.kind) && $0.createdAt <= until }
+        let dTags = f["#d"] as? [String]
+        let aTags = f["#a"] as? [String]
+        let matching = events.filter { e in
+            kinds.contains(e.kind) && e.createdAt <= until && (dTags == nil || dTags!.contains(e.tagValue("d") ?? ""))
+                && (aTags == nil || e.tags.contains { $0.count >= 2 && $0[0] == "a" && aTags!.contains($0[1]) })
+        }
             .sorted { $0.createdAt != $1.createdAt ? $0.createdAt > $1.createdAt : $0.id < $1.id }.prefix(limit)
         for e in matching {
             let data = try JSONEncoder().encode(e)
@@ -266,7 +293,7 @@ final class RelayFetchTests: XCTestCase {
 
         let del = try EntryDeletion.template(pubkey: pubkey, dateString: "2026-11-10", eventId: lowest.id).signed(privateKey: secret, createdAt: 250)
         days = RemoteJournal.days(from: [v1, v2a, v2b, del], owner: pubkey, privateKey: secret)
-        XCTAssertEqual(days["2026-11-10"], .deleted(at: 250))
+        XCTAssertEqual(days["2026-11-10"], .deleted(at: 250, by: [del.id]))
 
         let v3 = try entry("2026-11-10", "rewritten", at: 300)
         days = RemoteJournal.days(from: [v1, v2a, v2b, del, v3], owner: pubkey, privateKey: secret)

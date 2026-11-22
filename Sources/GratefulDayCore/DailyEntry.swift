@@ -43,6 +43,26 @@ public enum DailyEntry {
             f.dateFormat = "EEEE, MMMM d"
             self.displayDate = f.string(from: start)
         }
+
+        /// A day rebuilt from its stored identity, never recomputed from a
+        /// time zone (spec §1.8): the same `d`, `day` and `published_at` the
+        /// entry was first given. Nil if `dateString` isn't a real date.
+        public init?(dateString: String, dayOfYear: Int, publishedAt: Int) {
+            guard DailyEntry.isValidDateString(dateString), (1...366).contains(dayOfYear), publishedAt > 0 else { return nil }
+            let p = dateString.split(separator: "-").compactMap { Int($0) }
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = TimeZone(identifier: "UTC")!
+            guard let date = cal.date(from: DateComponents(year: p[0], month: p[1], day: p[2], hour: 12)) else { return nil }
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.calendar = cal
+            f.timeZone = cal.timeZone
+            f.dateFormat = "EEEE, MMMM d"
+            self.dateString = dateString
+            self.dayOfYear = dayOfYear
+            self.publishedAt = publishedAt
+            self.displayDate = f.string(from: date)
+        }
     }
 
     /// Build the unsigned 36669 for a day. `content` must already be the

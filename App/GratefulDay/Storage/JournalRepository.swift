@@ -81,6 +81,8 @@ struct JournalRepository {
         entry.notesText = ""
         entry.deletedAt = now
         entry.updatedAt = now
+        // A delete after sync is pending until its kind 5 is delivered (M5b-2).
+        if entry.syncState == .synced { entry.syncStateRaw = SyncState.localOnly.rawValue }
         try context.save()
     }
 

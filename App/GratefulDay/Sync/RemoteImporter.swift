@@ -35,8 +35,13 @@ struct RemoteImporter {
     @discardableResult
     func apply(_ days: [String: RemoteDay], zone: TimeZone = .current) throws -> Summary {
         var summary = Summary()
+        let outbox = Outbox(context: context, owner: owner)
         for (dateString, remote) in days.sorted(by: { $0.key < $1.key }) {
             let row = try ownerRow(dateString)
+            // A version this device signed (M5b-2): its state comes from the
+            // outbox's acknowledgements, never from seeing it on one relay.
+            if case .entry(_, _, let eventId, _, _) = remote,
+               try outbox.ownEventIds(dateString: dateString).contains(eventId) { continue }
             // A copy older than the version this row already has (a lagging
             // relay answered a partial read) is never taken or archived.
             if let row, let base = row.remoteCreatedAt, let at = remote.createdAt, at < base { continue }
@@ -66,7 +71,12 @@ struct RemoteImporter {
                 }
                 summary.blocked += 1
 
-            case .deleted(let at):
+            case .deleted(let at, let by):
+                // This device's own delivered deletion (its id is in our
+                // outbox) is nothing new: a revive of that day is pending, not
+                // a conflict. Another device's deletion, even signed with the
+                // same key, still applies (P30 M1).
+                if !by.isEmpty, !by.isDisjoint(with: try outbox.ownEventIds(dateString: dateString)) { continue }
                 guard let row, row.deletedAt == nil else { continue }
                 if hasPendingEdits(row) {
                     // A remote delete against unsent local edits is a conflict (§4.2).
@@ -80,6 +90,9 @@ struct RemoteImporter {
                 }
                 row.notesText = ""
                 row.deletedAt = Date(timeIntervalSince1970: TimeInterval(at))
+                // The row is now based on the deletion: a revive is signed
+                // after it, and the pre-send check doesn't count it (P30 L1).
+                row.remoteCreatedAt = at
                 row.syncStateRaw = SyncState.synced.rawValue
                 summary.deleted += 1
 
@@ -134,6 +147,20 @@ struct RemoteImporter {
         return summary
     }
 
+    /// A relay holds a version a queued event of this device didn't base on
+    /// (r2.1 items 2 and 3): the day becomes a conflict. The local text
+    /// stays; a readable relay text is archived (once) and surfaced, so both
+    /// are kept for M6.
+    func conflict(dateString: String, remote: RemoteDay?) throws {
+        guard let row = try ownerRow(dateString) else { return }
+        row.syncStateRaw = SyncState.conflict.rawValue
+        if case .entry(let text, _, let eventId, _, _) = remote,
+           !hasArchive(dateString, eventId: eventId, reason: .remoteInConflict) {
+            archive(text, dateString: dateString, reason: .remoteInConflict, eventId: eventId, surfaced: true)
+        }
+        try context.save()
+    }
+
     /// A row has pending local edits when it isn't in step with a relay
     /// version: never published with text, or edited since its last sync.
     private func hasPendingEdits(_ row: JournalEntry) -> Bool {
@@ -180,7 +207,7 @@ extension RemoteDay {
     var createdAt: Int? {
         switch self {
         case .entry(_, _, _, let at, _), .blocked(_, let at): return at
-        case .deleted(let at): return at
+        case .deleted(let at, _): return at
         }
     }
 }
