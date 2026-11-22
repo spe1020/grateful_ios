@@ -81,6 +81,7 @@ struct RemoteImporter {
                 if hasPendingEdits(row) {
                     // A remote delete against unsent local edits is a conflict (§4.2).
                     row.syncStateRaw = SyncState.conflict.rawValue
+                    retireOpenConflictCopies(dateString)
                     summary.conflicts += 1
                     continue
                 }
@@ -160,6 +161,7 @@ struct RemoteImporter {
             archive(text, dateString: dateString, reason: .remoteInConflict, eventId: eventId, surfaced: true,
                     isPrivate: isPrivate, eventCreatedAt: createdAt)
         }
+        if case .deleted = remote { retireOpenConflictCopies(dateString) }
         try context.save()
     }
 
@@ -187,6 +189,17 @@ struct RemoteImporter {
             $0.ownerPubkey == o && $0.dateString == dateString && $0.eventId == id && $0.reasonRaw == raw
         })
         return ((try? context.fetchCount(d)) ?? 0) > 0
+    }
+
+    /// The account now holds a deletion for this day, so any open copy of
+    /// its earlier text is no longer the account's version. It stays in the
+    /// store, hidden, and is never offered on the conflict screen (P34 M1).
+    private func retireOpenConflictCopies(_ dateString: String) {
+        let o: String? = owner, raw = EarlierVersionReason.remoteInConflict.rawValue
+        let d = FetchDescriptor<EarlierVersion>(predicate: #Predicate {
+            $0.ownerPubkey == o && $0.dateString == dateString && $0.reasonRaw == raw && !$0.dismissed
+        })
+        for copy in (try? context.fetch(d)) ?? [] { copy.dismissed = true }
     }
 
     private func archive(_ text: String, dateString: String, reason: EarlierVersionReason, eventId: String?, surfaced: Bool,

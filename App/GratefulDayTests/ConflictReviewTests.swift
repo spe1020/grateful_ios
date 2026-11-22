@@ -410,6 +410,17 @@ final class ConflictReviewTests: XCTestCase {
         XCTAssertEqual(try row("2026-11-20").notesText, "mine")
     }
 
+    /// The same, found by the pre-send check rather than on connecting.
+    func testOpenConflictThenAccountDeleteFoundBeforeSendingLeavesTheScreen() throws {
+        _ = try conflict("2026-11-20", local: "mine", account: "account text", at: 500)
+        try RemoteImporter(context: context, owner: owner)
+            .conflict(dateString: "2026-11-20", remote: .deleted(at: 900, by: []))
+        XCTAssertTrue(try review.load().items.isEmpty)
+        try review.apply(["2026-11-20": .keepAccount])
+        XCTAssertEqual(try row("2026-11-20").syncState, .conflict)
+        XCTAssertEqual(try row("2026-11-20").notesText, "mine")
+    }
+
     private func earlier(_ date: String) throws -> [String] {
         try context.fetch(FetchDescriptor<EarlierVersion>()).filter { $0.dateString == date && $0.reason == .remoteInConflict }.map(\.notesText)
     }
