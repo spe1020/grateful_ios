@@ -92,7 +92,13 @@ enum AccountMarkerState: String, Codable, Sendable {
     case connected, signedOut
 }
 
-/// Where an entry stands relative to Nostr. Only `localOnly` exists until M5b.
+/// Where an entry stands relative to Nostr. Stored as a string, so new
+/// values need no schema change.
 enum SyncState: String, Codable, Sendable {
     case localOnly
+    /// Matches the newest relay version (`remoteEventID`).
+    case synced
+    /// The newest relay version can't be decrypted or decoded: unknown,
+    /// never shown as empty, never written over (interop §0, §4.1).
+    case blocked
 }
