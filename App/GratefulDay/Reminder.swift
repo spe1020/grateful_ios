@@ -44,8 +44,7 @@ struct SystemNotificationScheduler: NotificationScheduling {
 @MainActor
 @Observable
 final class ReminderModel {
-    /// Notification copy: never includes reflection text. "A quiet minute
-    /// of gratitude" is the approved tagline; the full line is draft copy.
+    /// Notification copy (Prep, approved): never includes reflection text.
     static let title = "Grateful Day"
     static let body = "A quiet minute of gratitude."
     static let deniedMessage = "Notifications for Grateful Day are turned off in Settings."

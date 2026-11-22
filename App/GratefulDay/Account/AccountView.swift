@@ -7,6 +7,7 @@ import NostrCore
 struct AccountView: View {
     @Environment(AccountModel.self) private var account
     @Environment(JournalStore.self) private var store
+    @Environment(SyncService.self) private var sync
 
     enum Sheet: String, Identifiable {
         case restore, importKey, backupOffer, signOut, remove
@@ -43,6 +44,14 @@ struct AccountView: View {
                     }
                     Button(AccountCopy.signOut) { sheet = .signOut }
                         .accessibilityIdentifier("account.signOut")
+                }
+                // The account's own list has nowhere to save (Seth option A,
+                // zero write relays): shown while it lasts, no alert (Prep §1).
+                if sync.relays?.write?.isEmpty == true {
+                    Section {
+                        Text(SyncCopy.noWriteRelays)
+                            .accessibilityIdentifier("account.noWriteRelays")
+                    }
                 }
             case .keyMissing:
                 Section {

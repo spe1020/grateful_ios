@@ -20,6 +20,10 @@ struct TodayView: View {
     /// The day whose question "Reflect on this" pinned (kept for this session).
     @State private var pinnedDay: String?
     @State private var showingReminder = false
+    /// Set aside, filtered to these items (P22); nil when closed.
+    @State private var setAside: SetAsideFilter?
+    /// Bumped after a dismiss so the plain fetch below is read again.
+    @State private var earlierVersionsTick = 0
 
     var body: some View {
         NavigationStack {
@@ -61,16 +65,21 @@ struct TodayView: View {
                                 .font(GDFont.sectionLabel)
                                 .accessibilityIdentifier("today.stillLooking")
                         }
-                        // Quiet lines only, never a modal (Chief P22; copy is DRAFT until Prep's).
+                        // Quiet lines only, never a modal (Chief P22; Prep's final copy).
+                        let _ = earlierVersionsTick
+                        if let replaced = try? repo.surfacedEarlierVersions(), !replaced.isEmpty {
+                            ReplacedVersionsLine(versions: replaced, onOpen: { setAside = SetAsideFilter(ids: $0) }) { ids in
+                                try? repo.dismissEarlierVersions(ids)
+                                earlierVersionsTick += 1
+                            }
+                        }
                         if (try? repo.entry(for: day.dateString))??.syncState == .conflict {
-                            Text(SyncDraftCopy.alsoChangedElsewhere)
+                            Text(SyncCopy.alsoChangedElsewhere)
                                 .font(GDFont.sectionLabel)
                                 .foregroundStyle(GDColor.foreground)
                                 .accessibilityIdentifier("today.conflict")
-                        } else if (try? repo.surfacedEarlierVersions())?.contains(where: { $0.dateString == day.dateString }) == true {
-                            Text(SyncDraftCopy.earlierVersionKept)
-                                .font(GDFont.sectionLabel)
-                                .foregroundStyle(GDColor.foreground)
+                        } else if let kept = try? repo.setAsideVersions().filter({ $0.dateString == day.dateString }), !kept.isEmpty {
+                            EarlierVersionLine { setAside = SetAsideFilter(ids: Set(kept.map(\.id))) }
                                 .accessibilityIdentifier("today.earlierVersion")
                         }
                         if let other = try? repo.otherAccountText(for: day.dateString) {
@@ -98,7 +107,12 @@ struct TodayView: View {
                             .accessibilitySortPriority(1)
                     }
 
-                    LocalOnlyFooter()
+                    // Chief P25: follows today's row. Only an imported day still
+                    // matching its relay version drops the label.
+                    if store.container.map({ JournalRepository(context: $0.mainContext, activeOwner: account.activeOwner)
+                        .showsLocalOnlyLabel(day.dateString) }) ?? true {
+                        LocalOnlyFooter()
+                    }
                 }
                 .padding(.horizontal, GDSpacing.medium)
                 .padding(.vertical, GDSpacing.large)
@@ -107,6 +121,9 @@ struct TodayView: View {
             .scrollDismissesKeyboard(.interactively)
             .background(GDColor.background.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(item: $setAside) { filter in
+                NavigationStack { SetAsideView(only: filter.ids) }
+            }
             .sheet(isPresented: $showingRestore) {
                 NavigationStack {
                     RestoreView(onImport: { showingRestore = false }, onDone: { _ in showingRestore = false })
@@ -213,7 +230,7 @@ private struct TodayEditorSection: View {
                 ProgressView().accessibilityHidden(true)
             case .blocked:
                 VStack(alignment: .leading, spacing: GDSpacing.small) {
-                    Text(SyncDraftCopy.blockedDay)
+                    Text(SyncCopy.blockedDay)
                         .font(GDFont.sectionLabel)
                         .foregroundStyle(GDColor.foreground)
                         .fixedSize(horizontal: false, vertical: true)

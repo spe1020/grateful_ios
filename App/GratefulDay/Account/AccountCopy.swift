@@ -91,9 +91,11 @@ enum AccountCopy {
     /// Audit #13 L1). Makes no claim about the key. Shown with [Try again].
     static let removeUnconfirmed = "We couldn't confirm that your journal key was removed from this iPhone. Your reflections haven't been deleted."
     static let signOutUnconfirmed = "We couldn't confirm that you've been signed out on this iPhone. Your reflections are still here."
-    /// DRAFT (Audit M5a L3).
+    /// Audit M5a L3; Prep's final copy. True because restore never
+    /// overwrites or deletes a backup.
     static func backupsSkipped(_ n: Int) -> String {
-        n == 1 ? "One backup couldn't be read and isn't shown." : "\(n) backups couldn't be read and aren't shown."
+        n == 1 ? "One backup couldn't be read, so it isn't listed. It hasn't been deleted."
+            : "\(n) backups couldn't be read, so they aren't listed. They haven't been deleted."
     }
     static let removeNothingDone = "Couldn't remove everything just now. Nothing has been deleted."
     static let removeKeyOnly = "Your journal key was removed, but the reflections on this iPhone couldn't be deleted yet."

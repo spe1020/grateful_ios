@@ -208,6 +208,9 @@ struct DayDetailView: View {
     @State private var notes: [String]?
     @State private var otherText: String?
     @State private var failed = false
+    /// This day's versions in Set aside (P22).
+    @State private var earlierIds: Set<UUID> = []
+    @State private var setAside: SetAsideFilter?
 
     var body: some View {
         ScrollView {
@@ -233,7 +236,13 @@ struct DayDetailView: View {
                             .textSelection(.enabled)
                     }
                     .accessibilityIdentifier("day.notes")
-                    if !notes.isEmpty {
+                    if !earlierIds.isEmpty {
+                        EarlierVersionLine { setAside = SetAsideFilter(ids: earlierIds) }
+                            .accessibilityIdentifier("day.earlierVersion")
+                    }
+                    // Chief P25: only an imported day still matching its relay
+                    // version drops "On this iPhone only".
+                    if !notes.isEmpty, repository.showsLocalOnlyLabel(dateString) {
                         Label(PrivacyCopy.localOnlyLabel, systemImage: "iphone")
                             .font(GDFont.sectionLabel)
                             .foregroundStyle(GDColor.mutedForeground)
@@ -256,6 +265,9 @@ struct DayDetailView: View {
         .background(GDColor.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)
+        .sheet(item: $setAside) { filter in
+            NavigationStack { SetAsideView(only: filter.ids) }
+        }
     }
 
     private func load() {
@@ -263,6 +275,7 @@ struct DayDetailView: View {
         do {
             notes = EntryNotes.split(try repository.text(for: day))
             otherText = try repository.otherAccountText(for: dateString)
+            earlierIds = Set(try repository.setAsideVersions().filter { $0.dateString == dateString }.map(\.id))
             failed = false
         } catch {
             failed = true

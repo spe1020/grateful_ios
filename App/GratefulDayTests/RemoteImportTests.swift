@@ -83,6 +83,49 @@ final class RemoteImportTests: XCTestCase {
         XCTAssertEqual(try archive().first?.surfaced, false)
     }
 
+    /// P22 Set aside: replaced versions only (conflict copies excluded),
+    /// this account only; dismissing hides the Today line, deletes nothing.
+    func testSetAsideListsReplacedVersionsAndDismissNeverDeletes() throws {
+        try insert("my note\n\nsecond", on: "2026-11-20", owner: owner, state: .synced, remoteId: "v1")
+        try insert("pending", on: "2026-11-19", owner: owner, state: .localOnly, remoteId: "w1")
+        try importer().apply(["2026-11-20": entry("replaced on web", id: "v2"),
+                              "2026-11-19": entry("conflicting", id: "w2")], zone: zone)
+        let repo = JournalRepository(context: context, activeOwner: owner)
+        let listed = try repo.setAsideVersions()
+        XCTAssertEqual(listed.map(\.dateString), ["2026-11-20"], "the conflict copy isn't a replacement")
+        XCTAssertTrue(try JournalRepository(context: context, activeOwner: other).setAsideVersions().isEmpty, "another account sees nothing")
+        try repo.dismissEarlierVersions(listed.map(\.id))
+        XCTAssertTrue(try repo.surfacedEarlierVersions().isEmpty, "the Today line is gone")
+        XCTAssertEqual(try repo.setAsideVersions().map(\.notesText), ["my note\n\nsecond"], "still in Set aside")
+        XCTAssertEqual(try archive().count, 2, "nothing deleted")
+    }
+
+    /// Chief P25: the "On this iPhone only" label, decided per day.
+    func testLocalOnlyLabelPerDay() throws {
+        let repo = JournalRepository(context: context, activeOwner: owner)
+        try importer().apply(["2026-11-20": entry("from web", id: "v1"),
+                              "2026-11-19": entry("also from web", id: "w1")], zone: zone)
+        XCTAssertFalse(repo.showsLocalOnlyLabel("2026-11-20"), "imported and unchanged: no label")
+
+        try repo.save(text: "edited here", for: TodayEditorModel.parse("2026-11-19", timeZone: zone)!)
+        XCTAssertTrue(repo.showsLocalOnlyLabel("2026-11-19"), "edited after import: only here")
+
+        try repo.save(text: "new here", for: TodayEditorModel.parse("2026-11-18", timeZone: zone)!)
+        XCTAssertTrue(repo.showsLocalOnlyLabel("2026-11-18"), "written here: only here")
+        XCTAssertTrue(repo.showsLocalOnlyLabel("2026-11-17"), "no row yet: only here")
+
+        XCTAssertTrue(JournalRepository(context: context).showsLocalOnlyLabel("2026-11-20"), "guests unchanged")
+    }
+
+    func testReplacedLineCopy() {
+        XCTAssertEqual(SyncCopy.replaced(dates: ["2026-11-20"]).hasPrefix("Your reflection from "), true)
+        XCTAssertTrue(SyncCopy.replaced(dates: ["2026-11-20"]).hasSuffix(" was replaced by a version saved elsewhere. Your earlier text is in Set aside."))
+        XCTAssertEqual(SyncCopy.replaced(dates: ["2026-11-19", "2026-11-20"]),
+                       "2 reflections were replaced by versions saved elsewhere. Your earlier text is in Set aside.")
+        XCTAssertTrue(SyncCopy.monthDay("2026-11-20").contains("20"), "the day isn't shifted by time zone")
+        XCTAssertEqual(SyncCopy.monthDay("not a date"), "not a date")
+    }
+
     func testUnbasedRemoteVersionWithPendingEditsIsConflict() throws {
         try insert("edited here", on: "2026-11-20", owner: owner, state: .localOnly, remoteId: "v1")
         try importer().apply(["2026-11-20": entry("edited on web", id: "v2")], zone: zone)

@@ -192,10 +192,36 @@ struct JournalRepository {
     /// Kept-aside versions the person should see (P22), for the active owner
     /// (or guest) only.
     func surfacedEarlierVersions() throws -> [EarlierVersion] {
+        try setAsideVersions().filter { !$0.dismissed }
+    }
+
+    /// Set aside (P22): this account's surfaced versions that a relay version
+    /// replaced, newest first. Dismissing the Today line never removes one,
+    /// and nothing here is ever purged. Conflict copies are excluded; they
+    /// belong to the conflict case, not a replacement.
+    func setAsideVersions() throws -> [EarlierVersion] {
         let all = try context.fetch(FetchDescriptor<EarlierVersion>(
-            predicate: #Predicate { $0.surfaced && !$0.dismissed },
+            predicate: #Predicate { $0.surfaced },
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))
-        return all.filter { $0.ownerPubkey == activeOwner }
+        return all.filter { $0.ownerPubkey == activeOwner && $0.reason == .replacedByRemote }
+    }
+
+    /// Hide the Today line for these versions. Nothing is deleted.
+    func dismissEarlierVersions(_ ids: [UUID]) throws {
+        for v in try setAsideVersions() where ids.contains(v.id) { v.dismissed = true }
+        try context.save()
+    }
+
+    /// Chief P25: whether a day shows "On this iPhone only". Guests always
+    /// do. On an account, only a day imported from relays whose text still
+    /// matches that version (`.synced`; any local edit makes it `.localOnly`)
+    /// drops the label. Days written or edited here, and days whose state
+    /// can't be read, keep it (they become M5b-2's Saving mark).
+    func showsLocalOnlyLabel(_ dateString: String) -> Bool {
+        guard activeOwner != nil else { return true }
+        // No row yet, or unreadable: only here.
+        guard let row = try? entry(for: dateString) else { return true }
+        return row.syncState != .synced
     }
 
     /// The editor's row for a date is read-only while its relay version is unreadable.

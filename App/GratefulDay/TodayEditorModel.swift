@@ -182,7 +182,7 @@ final class TodayEditorModel {
         milestoneMessage = Self.milestoneText(reached)
     }
 
-    /// DRAFT copy for Prep/Growth: quiet, one line, totals only.
+    /// Prep's approved copy: quiet, one line, totals only.
     static func milestoneText(_ total: Int) -> String {
         total == 1 ? "Your first reflection." : "That's \(total) reflections."
     }
