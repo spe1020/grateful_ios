@@ -51,7 +51,7 @@ final class JournalStore {
         return nil
     }
 
-    static let schema = Schema(versionedSchema: JournalSchemaV4.self)
+    static let schema = Schema(versionedSchema: JournalSchemaV5.self)
 
     static func configuration(url: URL) -> ModelConfiguration {
         ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
@@ -62,6 +62,10 @@ final class JournalStore {
     /// re-applies the backup exclusion and protection and clears the flags
     /// once they succeed (P10 item 2).
     func openIfPossible(protectedDataAvailable: Bool) {
+        openIfPossible(protectedDataAvailable: protectedDataAvailable, clearsRemovalFlag: true)
+    }
+
+    private func openIfPossible(protectedDataAvailable: Bool, clearsRemovalFlag: Bool) {
         if case .open = state {
             if protectedDataAvailable { reapplyProtections() }
             return
@@ -87,6 +91,10 @@ final class JournalStore {
             let filesProtected = location.protectFiles()
             protectionFailed = !(prepared.protectionApplied && filesProtected)
             state = .open(container)
+            // Audit #13 L2: a removal interrupted after the delete but before
+            // the reopen leaves the flag set over a store that now opens; the
+            // first successful open clears it.
+            if clearsRemovalFlag, removalIncomplete { removalIncomplete = false }
         } catch {
             StorageLog.error("Journal store could not be opened", file: location.storeURL.lastPathComponent, error: error)
             state = .failed
@@ -121,6 +129,9 @@ final class JournalStore {
         // here until a clean, reopened store, "Nothing has been deleted"
         // would be untrue (Seth, Audit #13 review).
         removalIncomplete = true
+        // Release the open container before deleting its files (Audit M5a
+        // L1): nothing may save into a file that's about to be removed.
+        if let context = container?.mainContext, context.hasChanges { context.rollback() }
         state = .waitingForUnlock
         do {
             if FileManager.default.fileExists(atPath: location.directory.path) {
@@ -128,7 +139,8 @@ final class JournalStore {
             }
         } catch {
             StorageLog.error("Removing the journal store failed", error: error)
-            openIfPossible(protectedDataAvailable: true)
+            // Reopen what's left, but keep the flag: some files may be gone.
+            openIfPossible(protectedDataAvailable: true, clearsRemovalFlag: false)
             return false
         }
         openIfPossible(protectedDataAvailable: true)

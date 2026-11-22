@@ -7,6 +7,7 @@ import NostrCore
 struct AccountView: View {
     @Environment(AccountModel.self) private var account
     @Environment(JournalStore.self) private var store
+    @Environment(SyncService.self) private var sync
 
     enum Sheet: String, Identifiable {
         case restore, importKey, backupOffer, signOut, remove
@@ -16,6 +17,8 @@ struct AccountView: View {
     @State private var sheet: Sheet?
     @State private var confirmingCreate = false
     @State private var notice: String?
+    /// The flow [Try again] reopens, for notices that offer it.
+    @State private var retry: Sheet?
 
     var body: some View {
         List {
@@ -42,6 +45,14 @@ struct AccountView: View {
                     Button(AccountCopy.signOut) { sheet = .signOut }
                         .accessibilityIdentifier("account.signOut")
                 }
+                // The account's own list has nowhere to save (Seth option A,
+                // zero write relays): shown while it lasts, no alert (Prep §1).
+                if sync.relays?.write?.isEmpty == true {
+                    Section {
+                        Text(SyncCopy.noWriteRelays)
+                            .accessibilityIdentifier("account.noWriteRelays")
+                    }
+                }
             case .keyMissing:
                 Section {
                     Text(AccountCopy.keyMissing)
@@ -56,7 +67,17 @@ struct AccountView: View {
             }
 
             if let notice {
-                Section { Text(notice).accessibilityIdentifier("account.notice") }
+                Section {
+                    Text(notice).accessibilityIdentifier("account.notice")
+                    if let retry {
+                        Button(AccountCopy.tryAgain) {
+                            self.notice = nil
+                            self.retry = nil
+                            sheet = retry
+                        }
+                        .accessibilityIdentifier("account.noticeRetry")
+                    }
+                }
             }
 
             switch account.state {
@@ -104,11 +125,15 @@ struct AccountView: View {
     /// A sheet finished. If it connected an account, offer the backup next.
     private func done(_ result: FlowResult) {
         sheet = nil
+        retry = nil
         switch result {
         case .connected:
             DispatchQueue.main.async { sheet = .backupOffer }
         case .message(let text):
             notice = text
+        case .retryable(let text, let flow):
+            notice = text
+            retry = flow
         case .closed:
             break
         }
@@ -120,7 +145,11 @@ struct AccountView: View {
     }
 }
 
-enum FlowResult { case connected, message(String), closed }
+enum FlowResult {
+    case connected, message(String), closed
+    /// A notice with [Try again], which reopens `flow` (Prep F7/F8).
+    case retryable(String, AccountView.Sheet)
+}
 
 // MARK: - F3 Restore
 
@@ -154,6 +183,9 @@ struct RestoreView: View {
                         .accessibilityIdentifier("restore.backup")
                     }
                 }
+            }
+            if account.skippedBackups > 0 {
+                Text(AccountCopy.backupsSkipped(account.skippedBackups)).accessibilityIdentifier("restore.skipped")
             }
             if let error { Text(error) }
         }
@@ -350,6 +382,7 @@ struct SignOutView: View {
         switch account.signOut(context: context) {
         case .signedOut: onDone(.closed)
         case .stayedSignedIn, .blocked: onDone(.message(AccountCopy.signOutFailed))
+        case .unconfirmed: onDone(.retryable(AccountCopy.signOutUnconfirmed, .signOut))
         }
     }
 }
@@ -388,9 +421,12 @@ struct RemoveDataView: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(GDSpacing.medium)
         }
-        .confirmationDialog(AccountCopy.removeSecond(all ?? 0), isPresented: $confirmingSecond, titleVisibility: .visible) {
-            Button(AccountCopy.delete, role: .destructive) { remove(hasBackup: hasBackup, pubkey: pubkey) }
-                .accessibilityIdentifier("remove.step2")
+        .confirmationDialog(all.map(AccountCopy.removeSecond) ?? AccountCopy.removeNothingDone, isPresented: $confirmingSecond, titleVisibility: .visible) {
+            // Never "0 reflections" when the count can't be read (Audit M5a L2).
+            if all != nil {
+                Button(AccountCopy.delete, role: .destructive) { remove(hasBackup: hasBackup, pubkey: pubkey) }
+                    .accessibilityIdentifier("remove.step2")
+            }
             Button(AccountCopy.cancel, role: .cancel) {}
         }
         .confirmationDialog(AccountCopy.deleteBackupHeading, isPresented: $askingBackup, titleVisibility: .visible) {
@@ -422,8 +458,10 @@ struct RemoveDataView: View {
             } else {
                 onDone(.closed)
             }
-        case .keyNotRemoved, .blocked:
+        case .keyDeleteFailed, .blocked:
             onDone(.message(AccountCopy.removeNothingDone))
+        case .keyDeleteUnconfirmed:
+            onDone(.retryable(AccountCopy.removeUnconfirmed, .remove))
         case .journalNotRemoved:
             onDone(.message(AccountCopy.removeKeyOnly))
         }

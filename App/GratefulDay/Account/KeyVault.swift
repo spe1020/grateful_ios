@@ -66,11 +66,27 @@ final class KeyVault {
 
     /// Delete the primary key and confirm it's gone: success only when a
     /// re-read returns `notFound` (design §6).
-    func deletePrimaryVerified() -> Bool {
-        let status = keychain.delete(service: Self.primaryService, account: Self.primaryAccount, synchronizable: false)
-        guard status == errSecSuccess || status == errSecItemNotFound else { return false }
-        return readPrimary() == .notFound
+    enum DeleteOutcome: Equatable {
+        /// Deleted, and a re-read confirms it's gone.
+        case deleted
+        /// The delete call itself failed: the key is still there.
+        case deleteFailed
+        /// The delete call succeeded but the re-read couldn't confirm it
+        /// (locked or failed): the key may or may not be gone (Audit #13 L1).
+        case unconfirmed
     }
+
+    func deletePrimary() -> DeleteOutcome {
+        let status = keychain.delete(service: Self.primaryService, account: Self.primaryAccount, synchronizable: false)
+        guard status == errSecSuccess || status == errSecItemNotFound else { return .deleteFailed }
+        switch readPrimary() {
+        case .notFound: return .deleted
+        case .key: return .deleteFailed
+        case .locked, .failed: return .unconfirmed
+        }
+    }
+
+    func deletePrimaryVerified() -> Bool { deletePrimary() == .deleted }
 
     // MARK: iCloud Keychain backup
 
@@ -93,19 +109,28 @@ final class KeyVault {
         let created: Date?
     }
 
+    /// Backup items that couldn't be read or decoded in the last listing.
+    /// They're skipped, not treated as "no backup" (Audit M5a L3).
+    private(set) var skippedBackups = 0
+
     /// Backups visible on this device (those synced here by iCloud Keychain).
+    /// An item that can't be read is skipped and counted, so it doesn't
+    /// block restoring the others (Audit M5a L3).
     func listBackups() -> BackupList {
         switch keychain.accounts(service: Self.backupService, synchronizable: true) {
         case .failure: return .unavailable
         case .success(let accounts):
             var found: [Backup] = []
+            var skipped = 0
             for account in accounts.sorted() {
                 guard case .found(let data) = keychain.read(service: Self.backupService, account: account, synchronizable: true),
                       let payload = Self.decodePayload(data), let secret = Data(base64Encoded: payload.key),
                       let pubkey = Self.pubkeyHex(for: secret)
-                else { return .unavailable }
+                else { skipped += 1; continue }
                 found.append(Backup(account: account, pubkey: pubkey, created: payload.created))
             }
+            skippedBackups = skipped
+            if found.isEmpty && skipped > 0 { return .unavailable }
             // Newest first (Prep F3).
             return .backups(found.sorted { ($0.created ?? .distantPast) > ($1.created ?? .distantPast) })
         }

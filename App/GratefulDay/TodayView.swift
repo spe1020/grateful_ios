@@ -14,11 +14,16 @@ struct TodayView: View {
     @State private var editor: TodayEditorModel?
     @Environment(ReminderModel.self) private var reminder
     @Environment(AccountModel.self) private var account
+    @Environment(SyncService.self) private var sync
     @State private var showingRestore = false
     @State private var showingOtherAccount = false
     /// The day whose question "Reflect on this" pinned (kept for this session).
     @State private var pinnedDay: String?
     @State private var showingReminder = false
+    /// Set aside, filtered to these items (P22); nil when closed.
+    @State private var setAside: SetAsideFilter?
+    /// Bumped after a dismiss so the plain fetch below is read again.
+    @State private var earlierVersionsTick = 0
 
     var body: some View {
         NavigationStack {
@@ -60,6 +65,23 @@ struct TodayView: View {
                                 .font(GDFont.sectionLabel)
                                 .accessibilityIdentifier("today.stillLooking")
                         }
+                        // Quiet lines only, never a modal (Chief P22; Prep's final copy).
+                        let _ = earlierVersionsTick
+                        if let replaced = try? repo.surfacedEarlierVersions(), !replaced.isEmpty {
+                            ReplacedVersionsLine(versions: replaced, onOpen: { setAside = SetAsideFilter(ids: $0) }) { ids in
+                                try? repo.dismissEarlierVersions(ids)
+                                earlierVersionsTick += 1
+                            }
+                        }
+                        if (try? repo.entry(for: day.dateString))??.syncState == .conflict {
+                            Text(SyncCopy.alsoChangedElsewhere)
+                                .font(GDFont.sectionLabel)
+                                .foregroundStyle(GDColor.foreground)
+                                .accessibilityIdentifier("today.conflict")
+                        } else if let kept = try? repo.setAsideVersions().filter({ $0.dateString == day.dateString }), !kept.isEmpty {
+                            EarlierVersionLine { setAside = SetAsideFilter(ids: Set(kept.map(\.id))) }
+                                .accessibilityIdentifier("today.earlierVersion")
+                        }
                         if let other = try? repo.otherAccountText(for: day.dateString) {
                             Button(AccountCopy.alsoWroteToday) { showingOtherAccount = true }
                                 .font(GDFont.sectionLabel)
@@ -85,7 +107,12 @@ struct TodayView: View {
                             .accessibilitySortPriority(1)
                     }
 
-                    LocalOnlyFooter()
+                    // Chief P25: follows today's row. Only an imported day still
+                    // matching its relay version drops the label.
+                    if store.container.map({ JournalRepository(context: $0.mainContext, activeOwner: account.activeOwner)
+                        .showsLocalOnlyLabel(day.dateString) }) ?? true {
+                        LocalOnlyFooter()
+                    }
                 }
                 .padding(.horizontal, GDSpacing.medium)
                 .padding(.vertical, GDSpacing.large)
@@ -94,6 +121,9 @@ struct TodayView: View {
             .scrollDismissesKeyboard(.interactively)
             .background(GDColor.background.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(item: $setAside) { filter in
+                NavigationStack { SetAsideView(only: filter.ids) }
+            }
             .sheet(isPresented: $showingRestore) {
                 NavigationStack {
                     RestoreView(onImport: { showingRestore = false }, onDone: { _ in showingRestore = false })
@@ -131,6 +161,9 @@ struct TodayView: View {
             default:
                 editor?.flush()
             }
+        }
+        .onChange(of: sync.status) { _, status in
+            if case .done = status { editor?.reloadIfClean() }
         }
         .onReceive(NotificationCenter.default
             .publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)
@@ -195,6 +228,20 @@ private struct TodayEditorSection: View {
                 .accessibilityIdentifier("today.readFailed")
             case .loading:
                 ProgressView().accessibilityHidden(true)
+            case .blocked:
+                VStack(alignment: .leading, spacing: GDSpacing.small) {
+                    Text(SyncCopy.blockedDay)
+                        .font(GDFont.sectionLabel)
+                        .foregroundStyle(GDColor.foreground)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("today.blocked")
+                    ForEach(Array(EntryNotes.split(model.text).enumerated()), id: \.offset) { _, note in
+                        Text(note)
+                            .font(GDFont.body)
+                            .foregroundStyle(GDColor.foreground)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             case .ready:
                 editor
             }
@@ -292,12 +339,12 @@ private struct TodayEditorSection: View {
     }
 }
 
-#Preview("Light") { TodayView().environment(JournalStore()).environment(ReminderModel()).environment(AccountModel()) }
+#Preview("Light") { TodayView().environment(JournalStore()).environment(ReminderModel()).environment(AccountModel()).environment(SyncService()) }
 #Preview("Dark, largest text") {
     TodayView()
         .environment(JournalStore())
         .environment(ReminderModel())
-        .environment(AccountModel())
+        .environment(AccountModel()).environment(SyncService())
         .preferredColorScheme(.dark)
         .dynamicTypeSize(.accessibility5)
 }

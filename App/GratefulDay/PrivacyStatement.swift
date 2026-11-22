@@ -4,9 +4,6 @@ import SwiftUI
 /// Chief P3). Change only together with those documents.
 enum PrivacyCopy {
     static let preAccountStatement = "Until you connect an account, nothing you write is published. Your reflections are saved only on this iPhone and aren't included in iCloud or iPhone backups. If you lose or replace this iPhone, or delete the app, they can't be recovered."
-    /// Shown instead of `preAccountStatement` while the backup exclusion is
-    /// not in effect on this device (Chief P10). DRAFT from the facts Chief
-    /// listed; Prep owns the final wording.
     /// While the backup exclusion has failed on this iPhone (Chief P10).
     /// Prep's final copy (scope doc, "Alternate pre-account statement").
     static let backupExclusionFailedStatement = "Until you connect an account, nothing you write is published. Your reflections are saved on this iPhone. We weren't able to keep them out of iCloud and iPhone backups on this iPhone, so they may be included in one. We'll keep trying each time you open the app. If you lose or replace this iPhone, or delete the app, they may not be recoverable."

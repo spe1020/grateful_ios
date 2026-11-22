@@ -9,6 +9,7 @@ struct CalendarView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Binding var selection: AppTab
     @Environment(AccountModel.self) private var account
+    @Environment(SyncService.self) private var sync
     @State private var model: CalendarModel?
 
     var body: some View {
@@ -43,6 +44,7 @@ struct CalendarView: View {
         }
         // Today's edits and day changes show up when the tab is opened again.
         .onChange(of: selection) { _, tab in if tab == .calendar { model?.load() } }
+        .onChange(of: sync.status) { _, status in if case .done = status { model?.load() } }
         .onChange(of: scenePhase) { _, phase in if phase == .active { model?.load() } }
     }
 }
@@ -206,6 +208,10 @@ struct DayDetailView: View {
     @State private var notes: [String]?
     @State private var otherText: String?
     @State private var failed = false
+    /// This day's versions in Set aside (P22).
+    @State private var earlierIds: Set<UUID> = []
+    @State private var blocked = false
+    @State private var setAside: SetAsideFilter?
 
     var body: some View {
         ScrollView {
@@ -223,6 +229,13 @@ struct DayDetailView: View {
                         .foregroundStyle(GDColor.foreground)
                     Button("Try again") { load() }
                 } else if let notes {
+                    if blocked {
+                        Text(SyncCopy.blockedDay)
+                            .font(GDFont.sectionLabel)
+                            .foregroundStyle(GDColor.foreground)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("day.blocked")
+                    }
                     ForEach(Array(notes.enumerated()), id: \.offset) { _, note in
                         Text(note)
                             .font(GDFont.body)
@@ -231,7 +244,13 @@ struct DayDetailView: View {
                             .textSelection(.enabled)
                     }
                     .accessibilityIdentifier("day.notes")
-                    if !notes.isEmpty {
+                    if !earlierIds.isEmpty {
+                        EarlierVersionLine { setAside = SetAsideFilter(ids: earlierIds) }
+                            .accessibilityIdentifier("day.earlierVersion")
+                    }
+                    // Chief P25: only an imported day still matching its relay
+                    // version drops "On this iPhone only".
+                    if !notes.isEmpty, repository.showsLocalOnlyLabel(dateString) {
                         Label(PrivacyCopy.localOnlyLabel, systemImage: "iphone")
                             .font(GDFont.sectionLabel)
                             .foregroundStyle(GDColor.mutedForeground)
@@ -254,6 +273,9 @@ struct DayDetailView: View {
         .background(GDColor.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)
+        .sheet(item: $setAside) { filter in
+            NavigationStack { SetAsideView(only: filter.ids) }
+        }
     }
 
     private func load() {
@@ -261,6 +283,8 @@ struct DayDetailView: View {
         do {
             notes = EntryNotes.split(try repository.text(for: day))
             otherText = try repository.otherAccountText(for: dateString)
+            blocked = try repository.isBlocked(dateString)
+            earlierIds = Set(try repository.setAsideVersions().filter { $0.dateString == dateString }.map(\.id))
             failed = false
         } catch {
             failed = true
