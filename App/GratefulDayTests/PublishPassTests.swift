@@ -481,4 +481,182 @@ final class PublishPassTests: XCTestCase {
         XCTAssertEqual(sync.publishDeferral, .noWriteRelays)
         XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty })
     }
+
+    // MARK: - Audit FAIL at 4d58d90 (Chief P30)
+
+    /// Real relays keep only the newest 36669 per address.
+    private func keepNewest(_ r: FakeRelay) {
+        let newest = Dictionary(grouping: r.events.filter { $0.kind == DailyEntry.kind }, by: { $0.tagValue("d") ?? "" })
+            .mapValues { $0.max { $0.createdAt < $1.createdAt }!.id }
+        r.events = r.events.filter { $0.kind != DailyEntry.kind || newest[$0.tagValue("d") ?? ""] == $0.id }
+    }
+
+    private func kind5(_ date: String, target: String, at: Int) throws -> NostrEvent {
+        try EntryDeletion.template(pubkey: owner, dateString: date, eventId: target).signed(privateKey: secret, createdAt: at)
+    }
+
+    /// H1 (Audit probe): web wrote V0 to every default relay; iOS imported it
+    /// and edits twice. V0, still on a read-only relay, is older than the
+    /// base and is not a conflict.
+    func testOlderAncestorOnReadOnlyRelayIsNotAConflict() async throws {
+        let v0 = try remote("2026-11-20", "from web", at: 100)
+        try entry("2026-11-20", "from web", base: v0)
+        let w = relays("a", "b", events: [v0])
+        let readOnly = FakeRelay("readonly", events: [v0])
+        try edit("2026-11-20", "ios edit 1", at: t0)
+        let s1 = try await pass(w, read: [readOnly], write: w.map(\.url)).run()
+        w.forEach(keepNewest)
+        XCTAssertEqual(s1?.synced, 1)
+        try edit("2026-11-20", "ios edit 2", at: t0.addingTimeInterval(60))
+        let s2 = try await pass(w, read: [readOnly], write: w.map(\.url), at: t0.addingTimeInterval(120)).run()
+        XCTAssertEqual(s2?.conflicts, 0, "V0 is an ancestor of the base, not an unseen edit")
+        XCTAssertEqual(s2?.synced, 1)
+        XCTAssertEqual(try row("2026-11-20").syncState, .synced)
+    }
+
+    /// H1: a 3rd write relay that rejected V1 still holds V0; the next edit
+    /// isn't stopped by it.
+    func testWriteRelayThatMissedV1DoesNotStopNextEdit() async throws {
+        let v0 = try remote("2026-11-20", "from web", at: 100)
+        try entry("2026-11-20", "from web", base: v0)
+        let w = relays("a", "b", events: [v0]) + relays("c", reply: .reject, events: [v0])
+        try edit("2026-11-20", "v1", at: t0)
+        _ = try await pass(w, write: w.map(\.url)).run()
+        w.forEach(keepNewest)
+        XCTAssertEqual(try row("2026-11-20").syncState, .synced)
+        XCTAssertTrue(w[2].events.contains { $0.id == v0.id }, "c still has V0")
+        try edit("2026-11-20", "v2", at: t0.addingTimeInterval(60))
+        let s = try await pass(w, write: w.map(\.url), at: t0.addingTimeInterval(120)).run()
+        XCTAssertEqual(s?.conflicts, 0)
+        XCTAssertEqual(s?.synced, 1)
+    }
+
+    /// H1 keeps r2.1: an unseen edit newer than the base, even if older than
+    /// this row, still stops the send.
+    func testUnseenEditNewerThanBaseStillConflicts() async throws {
+        let base = try remote("2026-11-20", "start", at: 100)
+        try entry("2026-11-20", "start", base: base)
+        try edit("2026-11-20", "A later", at: t0)
+        let fromB = try remote("2026-11-20", "B in between", at: 200)
+        let w = relays("a", "b", events: [base, fromB])
+        let s = try await pass(w, write: w.map(\.url)).run()
+        XCTAssertEqual(s?.conflicts, 1)
+        XCTAssertTrue(w.allSatisfy { $0.publishedFrames.isEmpty })
+        XCTAssertEqual(try earlier("2026-11-20").map(\.notesText), ["B in between"])
+    }
+
+    /// M1 (Audit probe): delete a synced day, the kind 5 is delivered, then
+    /// revive it. The real order, import then publish, sends the revival.
+    func testReviveAfterDeliveredDeletionThroughImporter() async throws {
+        let base = try remote("2026-11-20", "old", at: 100)
+        try entry("2026-11-20", "old", base: base)
+        try delete("2026-11-20", at: t0)
+        let w = relays("a", "b", events: [base])
+        _ = try await pass(w, write: w.map(\.url)).run()
+        XCTAssertEqual(try row("2026-11-20").syncState, .synced)
+        try edit("2026-11-20", "new", at: t0.addingTimeInterval(5))
+        let days = RemoteJournal.days(from: w[0].events, owner: owner, privateKey: secret)
+        try RemoteImporter(context: context, owner: owner).apply(days, zone: zone)
+        XCTAssertEqual(try row("2026-11-20").syncState, .localOnly, "own kind 5 isn't a remote delete")
+        let s = try await pass(w, write: w.map(\.url), at: t0.addingTimeInterval(3600)).run()
+        XCTAssertEqual(s?.synced, 1)
+        XCTAssertEqual(try row("2026-11-20").notesText, "new")
+    }
+
+    /// M1: a kind 5 from another device, signed with the same key, still
+    /// applies, even when this device has its own kind 5 rows for the day.
+    func testKind5FromAnotherDeviceWithSameKeyStillApplies() async throws {
+        let base = try remote("2026-11-20", "old", at: 100)
+        try entry("2026-11-20", "old", base: base)
+        try delete("2026-11-20", at: t0)
+        let w = relays("a", "b", reply: .reject, events: [base])
+        _ = try await pass(w, write: w.map(\.url)).run()
+        XCTAssertFalse(try outbox().rows(dateString: "2026-11-20").filter { $0.kind == 5 }.isEmpty)
+        // Revived here; another device deleted later.
+        try edit("2026-11-20", "revived here", at: t0.addingTimeInterval(5))
+        let theirs = try kind5("2026-11-20", target: base.id, at: Int(t0.timeIntervalSince1970) + 600)
+        let days = RemoteJournal.days(from: [base, theirs], owner: owner, privateKey: secret)
+        try RemoteImporter(context: context, owner: owner).apply(days, zone: zone)
+        XCTAssertEqual(try row("2026-11-20").syncState, .conflict, "their delete meets a pending edit")
+        XCTAssertEqual(try row("2026-11-20").notesText, "revived here")
+
+        // Without pending edits it tombstones the day.
+        let other = try remote("2026-11-21", "kept", at: 100)
+        try entry("2026-11-21", "kept", base: other)
+        let theirs2 = try kind5("2026-11-21", target: other.id, at: 200)
+        try RemoteImporter(context: context, owner: owner)
+            .apply(RemoteJournal.days(from: [other, theirs2], owner: owner, privateKey: secret), zone: zone)
+        XCTAssertNotNil(try row("2026-11-21").deletedAt)
+    }
+
+    /// L1: a kind 5 the read pass didn't see, newer than the base, found by
+    /// the pre-send refetch: conflict, nothing sent.
+    func testUnseenKind5InPreSendRefetchIsConflict() async throws {
+        let base = try remote("2026-11-20", "start", at: 100)
+        try entry("2026-11-20", "start", base: base)
+        try edit("2026-11-20", "pending", at: t0)
+        let theirs = try kind5("2026-11-20", target: base.id, at: Int(t0.timeIntervalSince1970) + 600)
+        let w = relays("a", "b", events: [base, theirs])
+        let s = try await pass(w, write: w.map(\.url)).run()
+        XCTAssertEqual(s?.conflicts, 1)
+        XCTAssertTrue(w.allSatisfy { $0.publishedFrames.isEmpty })
+        XCTAssertEqual(try row("2026-11-20").syncState, .conflict)
+        XCTAssertEqual(try row("2026-11-20").notesText, "pending")
+    }
+
+    /// L1: a kind 5 that only covers the base or older isn't a conflict.
+    func testOldKind5AtOrBeforeBaseDoesNotStopSend() async throws {
+        let base = try remote("2026-11-20", "start", at: 100)
+        try entry("2026-11-20", "start", base: base)
+        try edit("2026-11-20", "pending", at: t0)
+        let old = try kind5("2026-11-20", target: "00", at: 50)
+        let w = relays("a", "b", events: [base, old])
+        let s = try await pass(w, write: w.map(\.url)).run()
+        XCTAssertEqual(s?.synced, 1)
+    }
+
+    /// L1: reviving a day another device deleted signs strictly after that
+    /// deletion, even with a clock behind it, and isn't stopped by it.
+    func testReviveOfRemotelyDeletedDaySignsAfterTheDeletion() async throws {
+        let base = try remote("2026-11-20", "old", at: 100)
+        try entry("2026-11-20", "old", base: base)
+        let future = Int(t0.timeIntervalSince1970) + 86_400
+        let theirs = try kind5("2026-11-20", target: base.id, at: future)
+        let w = relays("a", "b", events: [base, theirs])
+        try RemoteImporter(context: context, owner: owner)
+            .apply(RemoteJournal.days(from: w[0].events, owner: owner, privateKey: secret), zone: zone)
+        XCTAssertNotNil(try row("2026-11-20").deletedAt)
+        try edit("2026-11-20", "back again", at: t0)
+        let s = try await pass(w, write: w.map(\.url)).run()
+        XCTAssertEqual(s?.conflicts, 0)
+        XCTAssertEqual(s?.synced, 1)
+        let revived = try XCTUnwrap(sent(w[0]).last)
+        XCTAssertGreaterThan(revived.createdAt, future, "not hidden by the deletion")
+    }
+
+    /// End to end through SyncService (read, import, publish): delete,
+    /// sync, revive, sync. The revival reaches relays and stays synced.
+    func testSyncServiceDeleteThenReviveEndToEnd() async throws {
+        let base = try remote("2026-11-20", "old", at: 100)
+        try entry("2026-11-20", "old", base: base)
+        try JournalRepository(context: context, activeOwner: owner).setFlag(JournalFlag.publishDisclosureAccepted)
+        let relays = RelaySet.defaultRead.map { FakeRelay($0.host!, events: [base]) }
+        let sync = service(relays)
+        try delete("2026-11-20", at: Date.now)
+        await sync.run(owner: owner, secret: secret, context: context)
+        XCTAssertEqual(sync.lastPublish?.synced, 1)
+        XCTAssertEqual(try row("2026-11-20").syncState, .synced)
+        relays.forEach(keepNewest)
+        try edit("2026-11-20", "new", at: Date.now.addingTimeInterval(1))
+        await sync.run(owner: owner, secret: secret, context: context)
+        XCTAssertEqual(sync.lastPublish?.conflicts, 0)
+        XCTAssertEqual(sync.lastPublish?.synced, 1)
+        let r = try row("2026-11-20")
+        XCTAssertEqual(r.syncState, .synced)
+        XCTAssertEqual(r.notesText, "new")
+        relays.forEach(keepNewest)
+        await sync.run(owner: owner, secret: secret, context: context)
+        XCTAssertEqual(try row("2026-11-20").syncState, .synced, "a later read leaves it alone")
+        XCTAssertEqual(try row("2026-11-20").notesText, "new")
+    }
 }

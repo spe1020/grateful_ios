@@ -71,7 +71,12 @@ struct RemoteImporter {
                 }
                 summary.blocked += 1
 
-            case .deleted(let at):
+            case .deleted(let at, let by):
+                // This device's own delivered deletion (its id is in our
+                // outbox) is nothing new: a revive of that day is pending, not
+                // a conflict. Another device's deletion, even signed with the
+                // same key, still applies (P30 M1).
+                if !by.isEmpty, !by.isDisjoint(with: try outbox.ownEventIds(dateString: dateString)) { continue }
                 guard let row, row.deletedAt == nil else { continue }
                 if hasPendingEdits(row) {
                     // A remote delete against unsent local edits is a conflict (§4.2).
@@ -85,6 +90,9 @@ struct RemoteImporter {
                 }
                 row.notesText = ""
                 row.deletedAt = Date(timeIntervalSince1970: TimeInterval(at))
+                // The row is now based on the deletion: a revive is signed
+                // after it, and the pre-send check doesn't count it (P30 L1).
+                row.remoteCreatedAt = at
                 row.syncStateRaw = SyncState.synced.rawValue
                 summary.deleted += 1
 
@@ -199,7 +207,7 @@ extension RemoteDay {
     var createdAt: Int? {
         switch self {
         case .entry(_, _, _, let at, _), .blocked(_, let at): return at
-        case .deleted(let at): return at
+        case .deleted(let at, _): return at
         }
     }
 }

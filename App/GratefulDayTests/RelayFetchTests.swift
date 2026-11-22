@@ -67,8 +67,10 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
         let limit = min(f["limit"] as? Int ?? 1000, cap)
         // Newest first; ties by id so a capped second is deterministic.
         let dTags = f["#d"] as? [String]
-        let matching = events.filter {
-            kinds.contains($0.kind) && $0.createdAt <= until && (dTags == nil || dTags!.contains($0.tagValue("d") ?? ""))
+        let aTags = f["#a"] as? [String]
+        let matching = events.filter { e in
+            kinds.contains(e.kind) && e.createdAt <= until && (dTags == nil || dTags!.contains(e.tagValue("d") ?? ""))
+                && (aTags == nil || e.tags.contains { $0.count >= 2 && $0[0] == "a" && aTags!.contains($0[1]) })
         }
             .sorted { $0.createdAt != $1.createdAt ? $0.createdAt > $1.createdAt : $0.id < $1.id }.prefix(limit)
         for e in matching {
@@ -291,7 +293,7 @@ final class RelayFetchTests: XCTestCase {
 
         let del = try EntryDeletion.template(pubkey: pubkey, dateString: "2026-11-10", eventId: lowest.id).signed(privateKey: secret, createdAt: 250)
         days = RemoteJournal.days(from: [v1, v2a, v2b, del], owner: pubkey, privateKey: secret)
-        XCTAssertEqual(days["2026-11-10"], .deleted(at: 250))
+        XCTAssertEqual(days["2026-11-10"], .deleted(at: 250, by: [del.id]))
 
         let v3 = try entry("2026-11-10", "rewritten", at: 300)
         days = RemoteJournal.days(from: [v1, v2a, v2b, del, v3], owner: pubkey, privateKey: secret)

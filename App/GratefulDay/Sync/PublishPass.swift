@@ -110,8 +110,21 @@ struct PublishPass {
 
     // MARK: - Sending
 
-    private func dayFilter(_ dateString: String) -> RelayFilter {
-        RelayFilter(authors: [owner], kinds: [DailyEntry.kind], tagD: [dateString])
+    /// The day's 36669s and the kind 5s for its address (P30 L1), as one
+    /// result. A relay counts as answered only if it answered both queries.
+    private func fetchDay(_ dateString: String, from relays: [URL]) async -> FetchResult {
+        let address = EntryDeletion.address(pubkey: owner, dateString: dateString)
+        // One after the other: each relay gets one connection at a time.
+        let e = await fetcher.fetch(RelayFilter(authors: [owner], kinds: [DailyEntry.kind], tagD: [dateString]), from: relays)
+        let d = await fetcher.fetch(RelayFilter(authors: [owner], kinds: [5], tagA: [address]), from: relays)
+        var outcomes: [URL: RelayOutcome] = [:]
+        for url in relays {
+            let a = e.outcomes[url] ?? .failed("missing"), b = d.outcomes[url] ?? .failed("missing")
+            outcomes[url] = a != .answered ? a : b
+        }
+        var byId: [String: NostrEvent] = [:]
+        for ev in e.events + d.events { byId[ev.id] = ev }
+        return FetchResult(events: Array(byId.values), outcomes: outcomes)
     }
 
     private var readAndWrite: [URL] {
@@ -132,11 +145,12 @@ struct PublishPass {
             return
         }
         // Refetch before every send, the first one too (r2.1 item 2).
-        let fetched = await fetcher.fetch(dayFilter(day), from: readAndWrite)
+        let fetched = await fetchDay(day, from: readAndWrite)
         guard isCurrent(), !Task.isCancelled else { return }
         let own = try outbox.ownEventIds(dateString: day)
         switch DeliveryRules.preSendCheck(day: day, owner: owner, baseEventId: row.baseEventId,
-                                          ownEventIds: own, fetched: fetched, write: write) {
+                                          baseCreatedAt: row.baseCreatedAt, ownEventIds: own, fetched: fetched,
+                                          write: write, checkDeletions: row.kind == DailyEntry.kind) {
         case .unresolved:
             try outbox.deferRow(row, now: now())
             summary.deferred += 1
@@ -168,14 +182,12 @@ struct PublishPass {
     /// stops the row and makes the day a conflict.
     private func recheck(_ row: OutboxEvent, relays: [URL], write: [URL], summary: inout Summary) async throws {
         guard !relays.isEmpty else { return }
-        let fetched = await fetcher.fetch(dayFilter(row.dateString), from: relays)
+        let fetched = await fetchDay(row.dateString, from: relays)
         guard isCurrent(), !Task.isCancelled else { return }
         let own = try outbox.ownEventIds(dateString: row.dateString)
-        let unbased = fetched.events
-            .filter { DailyEntry.isValid($0, owner: owner) && $0.tagValue("d") == row.dateString }
-            .filter { $0.id != row.baseEventId && !own.contains($0.id) }
-            .max { ($0.createdAt, $1.id) < ($1.createdAt, $0.id) }
-        if let unbased {
+        if let unbased = DeliveryRules.unbased(day: row.dateString, owner: owner, baseEventId: row.baseEventId,
+                                               baseCreatedAt: row.baseCreatedAt, ownEventIds: own,
+                                               events: fetched.events, checkDeletions: row.kind == DailyEntry.kind) {
             try stop(row, remote: unbased, fetched: fetched)
             summary.conflicts += 1
             return

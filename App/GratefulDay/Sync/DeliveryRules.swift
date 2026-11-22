@@ -43,17 +43,45 @@ enum DeliveryRules {
         case unbasedRemote(NostrEvent)
     }
 
-    /// `fetched` is a query for this day's address on read ∪ write relays.
-    /// `ownEventIds` are this device's outbox ids for the day.
-    static func preSendCheck(day dateString: String, owner: String, baseEventId: String?,
-                             ownEventIds: Set<String>, fetched: FetchResult, write: [URL]?) -> Check {
-        let versions = fetched.events.filter {
-            DailyEntry.isValid($0, owner: owner) && $0.tagValue("d") == dateString
+    /// The newest change on relays that this row didn't base on, if any
+    /// (r2.1 items 2 and 3, narrowed by Chief P30):
+    /// - a 36669 for the day that is neither the base nor this device's
+    ///   own, and is ordered after the base (`created_at`, then the lower
+    ///   id wins a tie). A version at or before the base is an ancestor the
+    ///   base already replaced, e.g. a copy left on a read-only relay (H1).
+    ///   With no base, every version counts.
+    /// - for a 36669 row only (`checkDeletions`), a kind 5 for the day's
+    ///   address that isn't this device's own and is newer than the base: a
+    ///   deletion the pending edit never saw (L1).
+    static func unbased(day dateString: String, owner: String, baseEventId: String?, baseCreatedAt: Int?,
+                        ownEventIds: Set<String>, events: [NostrEvent], checkDeletions: Bool) -> NostrEvent? {
+        func afterBase(_ e: NostrEvent) -> Bool {
+            guard let at = baseCreatedAt else { return true }
+            if e.createdAt != at { return e.createdAt > at }
+            guard let id = baseEventId else { return true }
+            return e.id < id
         }
-        // A version found anywhere, read relay or write relay, counts.
-        if let unbased = versions
-            .filter({ $0.id != baseEventId && !ownEventIds.contains($0.id) })
-            .max(by: { ($0.createdAt, $1.id) < ($1.createdAt, $0.id) }) {
+        let versions = events.filter {
+            DailyEntry.isValid($0, owner: owner) && $0.tagValue("d") == dateString
+                && $0.id != baseEventId && !ownEventIds.contains($0.id) && afterBase($0)
+        }
+        let address = EntryDeletion.address(pubkey: owner, dateString: dateString)
+        let deletions = !checkDeletions ? [] : events.filter { e in
+            e.kind == 5 && e.pubkey == owner && e.isValid && !ownEventIds.contains(e.id)
+                && e.tags.contains { $0.count >= 2 && $0[0] == "a" && $0[1] == address }
+                && (baseCreatedAt.map { e.createdAt > $0 } ?? true)
+        }
+        return (versions + deletions).max { ($0.createdAt, $1.id) < ($1.createdAt, $0.id) }
+    }
+
+    /// `fetched` is a query for this day's 36669s and kind 5s on read ∪
+    /// write relays. `ownEventIds` are this device's outbox ids for the day.
+    static func preSendCheck(day dateString: String, owner: String, baseEventId: String?, baseCreatedAt: Int? = nil,
+                             ownEventIds: Set<String>, fetched: FetchResult, write: [URL]?,
+                             checkDeletions: Bool = true) -> Check {
+        // A change found anywhere, read relay or write relay, counts.
+        if let unbased = unbased(day: dateString, owner: owner, baseEventId: baseEventId, baseCreatedAt: baseCreatedAt,
+                                 ownEventIds: ownEventIds, events: fetched.events, checkDeletions: checkDeletions) {
             return .unbasedRemote(unbased)
         }
         // Only write relays that answered count toward knowing; an

@@ -93,6 +93,7 @@ struct RelayFilter: Equatable, Sendable {
     var kinds: [Int]
     var tagD: [String]? = nil
     var tagK: [String]? = nil
+    var tagA: [String]? = nil
     var until: Int? = nil
     var limit: Int? = nil
 
@@ -100,6 +101,7 @@ struct RelayFilter: Equatable, Sendable {
         var f: [String: Any] = ["authors": authors, "kinds": kinds]
         if let tagD { f["#d"] = tagD }
         if let tagK { f["#k"] = tagK }
+        if let tagA { f["#a"] = tagA }
         if let until { f["until"] = until }
         if let limit { f["limit"] = limit }
         return f
