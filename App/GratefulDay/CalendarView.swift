@@ -212,6 +212,9 @@ struct DayDetailView: View {
     @State private var earlierIds: Set<UUID> = []
     @State private var blocked = false
     @State private var setAside: SetAsideFilter?
+    /// M6: the day has a choice to make (opens the conflict screen).
+    @State private var inConflict = false
+    @State private var showingConflicts = false
 
     var body: some View {
         ScrollView {
@@ -244,7 +247,18 @@ struct DayDetailView: View {
                             .textSelection(.enabled)
                     }
                     .accessibilityIdentifier("day.notes")
-                    if !earlierIds.isEmpty {
+                    if inConflict {
+                        Button { showingConflicts = true } label: {
+                            Text(SyncCopy.alsoChangedElsewhere)
+                                .font(GDFont.sectionLabel)
+                                .foregroundStyle(GDColor.foreground)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("day.conflict")
+                    } else if !earlierIds.isEmpty {
                         EarlierVersionLine { setAside = SetAsideFilter(ids: earlierIds) }
                             .accessibilityIdentifier("day.earlierVersion")
                     }
@@ -276,6 +290,13 @@ struct DayDetailView: View {
         .sheet(item: $setAside) { filter in
             NavigationStack { SetAsideView(only: filter.ids) }
         }
+        .sheet(isPresented: $showingConflicts, onDismiss: load) {
+            if let owner = repository.activeOwner {
+                NavigationStack {
+                    ConflictReviewView(review: ConflictReview(context: repository.context, owner: owner)) { showingConflicts = false }
+                }
+            }
+        }
     }
 
     private func load() {
@@ -284,6 +305,12 @@ struct DayDetailView: View {
             notes = EntryNotes.split(try repository.text(for: day))
             otherText = try repository.otherAccountText(for: dateString)
             blocked = try repository.isBlocked(dateString)
+            if let owner = repository.activeOwner {
+                let days = try ConflictReview(context: repository.context, owner: owner).load()
+                inConflict = days.items.contains { $0.dateString == dateString }
+                // §5: a blocked day with pending edits shows the blocked line too.
+                if days.blocked.contains(where: { $0.dateString == dateString }) { blocked = true }
+            }
             earlierIds = Set(try repository.setAsideVersions().filter { $0.dateString == dateString }.map(\.id))
             failed = false
         } catch {

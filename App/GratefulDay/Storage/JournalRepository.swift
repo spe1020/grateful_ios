@@ -208,18 +208,19 @@ struct JournalRepository {
     /// Kept-aside versions the person should see (P22), for the active owner
     /// (or guest) only.
     func surfacedEarlierVersions() throws -> [EarlierVersion] {
-        try setAsideVersions().filter { !$0.dismissed }
+        try setAsideVersions().filter { !$0.dismissed && $0.reason == .replacedByRemote }
     }
 
-    /// Set aside (P22): this account's surfaced versions that a relay version
-    /// replaced, newest first. Dismissing the Today line never removes one,
+    /// Set aside (P22, M6): this account's surfaced versions that a relay
+    /// version replaced, or that the person didn't keep on the conflict
+    /// screen, newest first. Dismissing the Today line never removes one,
     /// and nothing here is ever purged. Conflict copies are excluded; they
     /// belong to the conflict case, not a replacement.
     func setAsideVersions() throws -> [EarlierVersion] {
         let all = try context.fetch(FetchDescriptor<EarlierVersion>(
             predicate: #Predicate { $0.surfaced },
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))
-        return all.filter { $0.ownerPubkey == activeOwner && $0.reason == .replacedByRemote }
+        return all.filter { $0.ownerPubkey == activeOwner && ($0.reason == .replacedByRemote || $0.reason == .notKept) }
     }
 
     /// Hide the Today line for these versions. Nothing is deleted.

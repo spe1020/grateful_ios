@@ -93,6 +93,10 @@ struct PublishPass {
                 guard let day = DailyEntry.Day(dateString: entry.dateString, dayOfYear: entry.dayOfYear,
                                                publishedAt: entry.publishedAt) else { continue }
                 let notes = EntryNotes.split(entry.notesText)
+                // Keep both can join two days past the size one event can
+                // hold. The day stays here, unsent, rather than stopping the
+                // whole pass (M6; copy for this case is open with Prep).
+                guard EntryNotes.join(notes).utf8.count <= DailyEntry.maxContentBytes else { continue }
                 let template = entry.isPrivate
                     ? try DailyEntry.privateTemplate(day: day, notes: notes, privateKey: secret)
                     : try DailyEntry.template(day: day, notes: notes)

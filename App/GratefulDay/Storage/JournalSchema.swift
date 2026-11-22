@@ -9,15 +9,15 @@ import SwiftData
 // and a store written by an older build would match no version and fail to
 // open. Never edit a frozen copy. Add a new version instead.
 //
-// The live models are JournalSchemaV6's; `JournalEntry`, `AcknowledgedMilestone`
+// The live models are JournalSchemaV7's; `JournalEntry`, `AcknowledgedMilestone`
 // and `JournalFlag` are typealiases to them.
 
-typealias JournalEntry = JournalSchemaV6.JournalEntry
-typealias AcknowledgedMilestone = JournalSchemaV6.AcknowledgedMilestone
-typealias JournalFlag = JournalSchemaV6.JournalFlag
-typealias AccountMarker = JournalSchemaV6.AccountMarker
-typealias EarlierVersion = JournalSchemaV6.EarlierVersion
-typealias OutboxEvent = JournalSchemaV6.OutboxEvent
+typealias JournalEntry = JournalSchemaV7.JournalEntry
+typealias AcknowledgedMilestone = JournalSchemaV7.AcknowledgedMilestone
+typealias JournalFlag = JournalSchemaV7.JournalFlag
+typealias AccountMarker = JournalSchemaV7.AccountMarker
+typealias EarlierVersion = JournalSchemaV7.EarlierVersion
+typealias OutboxEvent = JournalSchemaV7.OutboxEvent
 
 /// M2: the first shipped store.
 enum JournalSchemaV1: VersionedSchema {
@@ -114,7 +114,7 @@ enum JournalSchemaV3: VersionedSchema {
 
 enum JournalMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self, JournalSchemaV5.self, JournalSchemaV6.self]
+        [JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self, JournalSchemaV5.self, JournalSchemaV6.self, JournalSchemaV7.self]
     }
     static var stages: [MigrationStage] {
         [
@@ -133,6 +133,8 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: JournalSchemaV4.self, toVersion: JournalSchemaV5.self),
             // M5b-2: adds the outbox only.
             .lightweight(fromVersion: JournalSchemaV5.self, toVersion: JournalSchemaV6.self),
+            // M6: two local fields on EarlierVersion; old rows read as private.
+            .lightweight(fromVersion: JournalSchemaV6.self, toVersion: JournalSchemaV7.self),
         ]
     }
 }
