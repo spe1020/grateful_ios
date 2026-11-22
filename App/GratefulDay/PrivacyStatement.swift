@@ -4,15 +4,28 @@ import SwiftUI
 /// Chief P3). Change only together with those documents.
 enum PrivacyCopy {
     static let preAccountStatement = "Until you connect an account, nothing you write is published. Your reflections are saved only on this iPhone and aren't included in iCloud or iPhone backups. If you lose or replace this iPhone, or delete the app, they can't be recovered."
+    /// Shown instead of `preAccountStatement` while the backup exclusion is
+    /// not in effect on this device (Chief P10). DRAFT from the facts Chief
+    /// listed; Prep owns the final wording.
+    static let backupExclusionFailedStatement = "Until you connect an account, nothing you write is published. We couldn't keep this iPhone's journal out of backups, so your reflections may be included in iCloud or iPhone backups. We'll keep trying."
+
+    /// The statement that is true on this device right now.
+    static func statement(backupExclusionFailed: Bool) -> String {
+        backupExclusionFailed ? backupExclusionFailedStatement : preAccountStatement
+    }
+
     /// The local status label for an entry (Chief P3). No synced state until M5.
     static let localOnlyLabel = "On this iPhone only"
 }
 
 /// Settings → Privacy.
 struct PrivacyView: View {
+    @Environment(JournalStore.self) private var store
+
     var body: some View {
         ScrollView {
-            Text(PrivacyCopy.preAccountStatement)
+            // Never claims backup exclusion while it isn't in effect (P10).
+            Text(PrivacyCopy.statement(backupExclusionFailed: store.backupExclusionFailed))
                 .font(GDFont.body)
                 .foregroundStyle(GDColor.foreground)
                 .fixedSize(horizontal: false, vertical: true)
@@ -36,6 +49,8 @@ struct LocalOnlyFooter: View {
             Label(PrivacyCopy.localOnlyLabel, systemImage: "iphone")
                 .font(GDFont.sectionLabel)
                 .foregroundStyle(GDColor.mutedForeground)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
         .accessibilityIdentifier("today.localOnly")
         .sheet(isPresented: $showingStatement) {

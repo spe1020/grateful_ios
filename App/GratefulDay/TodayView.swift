@@ -1,34 +1,43 @@
 import SwiftUI
+import UIKit
 import GratefulDayCore
 
-/// Today: the date, room for the day's wisdom (M4) and the writing area,
-/// which becomes active in M3.
+/// Today: the date, room for the day's wisdom (M4) and the editor, which
+/// saves as you type.
 struct TodayView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(JournalStore.self) private var store
     /// The local day, using the same day identity as entries on Nostr
     /// (`DailyEntry.Day`, interop spec §1.8). Re-read when the app becomes
-    /// active and when the calendar day changes, so Today never shows
-    /// yesterday's date after midnight.
-    @State private var day = DailyEntry.Day(containing: .now)
+    /// active and when the calendar day changes.
+    @State private var day = JournalDay(containing: .now)
+    @State private var editor: TodayEditorModel?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: GDSpacing.large) {
-                    Text(TodayView.title(for: day))
+                    Text(TodayView.title(for: day.day))
                         .font(GDFont.dateTitle)
                         .foregroundStyle(GDColor.foreground)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("today.date")
-                        // Read first by VoiceOver (criterion 5).
-                        .accessibilitySortPriority(2)
+                        // Read first by VoiceOver.
+                        .accessibilitySortPriority(3)
+
+                    if let editor, editor.showWelcomeBack {
+                        Text(TodayEditorModel.welcomeBackMessage)
+                            .font(GDFont.body)
+                            .foregroundStyle(GDColor.mutedForeground)
+                            .accessibilityIdentifier("today.welcomeBack")
+                            .accessibilitySortPriority(2)
+                    }
 
                     WisdomPlaceholder()
 
-                    if store.container != nil {
-                        WritingAreaPlaceholder()
+                    if let editor {
+                        TodayEditorSection(model: editor)
                             .accessibilitySortPriority(1)
                     } else {
                         // Never an empty Today when the journal can't be read.
@@ -42,21 +51,51 @@ struct TodayView: View {
                 .padding(.vertical, GDSpacing.large)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .scrollDismissesKeyboard(.interactively)
             .background(GDColor.background.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
         }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { refreshDay() }
+        .onChange(of: store.container.map(ObjectIdentifier.init), initial: true) { _, _ in
+            if let container = store.container, editor == nil {
+                editor = TodayEditorModel(repository: JournalRepository(context: container.mainContext), day: day)
+            }
         }
-        // Posted on an arbitrary thread: hop to main before touching @State (Audit L1).
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                refreshDay()
+                // Retry anything a lock or failure left unsaved.
+                editor?.flush()
+            default:
+                editor?.flush()
+            }
+        }
+        .onReceive(NotificationCenter.default
+            .publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)
+            .receive(on: RunLoop.main)) { _ in
+            editor?.flush()
+        }
+        .onReceive(NotificationCenter.default
+            .publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)
+            .receive(on: RunLoop.main)) { _ in
+            editor?.flush()
+        }
+        // Posted on an arbitrary thread: hop to main before touching @State.
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
             refreshDay()
         }
     }
 
     private func refreshDay() {
-        let now = DailyEntry.Day(containing: .now)
-        if now != day { day = now }
+        let now = JournalDay(containing: .now)
+        guard now != day else { return }
+        guard let editor else {
+            day = now
+            return
+        }
+        editor.dayChanged(to: now)
+        // If saving to the old day failed, the editor stays on it, and so does Today.
+        day = editor.day
     }
 
     /// The date in the user's locale, e.g. "Saturday, November 21".
@@ -79,27 +118,106 @@ private struct WisdomPlaceholder: View {
     }
 }
 
-/// The writing area, shown but not yet active (M3 makes it editable).
-private struct WritingAreaPlaceholder: View {
-    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 180
+/// The writing area, its notes and the delete action.
+private struct TodayEditorSection: View {
+    @Bindable var model: TodayEditorModel
+    @State private var confirmingDelete = false
+    @State private var deleteFailed = false
+    @ScaledMetric(relativeTo: .body) private var minHeight: CGFloat = 180
+
+    static let placeholder = "What are you grateful for today?"
+    static let deleteTitle = "Delete this reflection? This can't be undone."
 
     var body: some View {
         VStack(alignment: .leading, spacing: GDSpacing.small) {
-            Text("Today's reflection")
-                .font(GDFont.sectionLabel)
-                .foregroundStyle(GDColor.mutedForeground)
-                .fixedSize(horizontal: false, vertical: true)
-            RoundedRectangle(cornerRadius: GDRadius.card, style: .continuous)
-                .fill(GDColor.card)
-                .overlay(
-                    RoundedRectangle(cornerRadius: GDRadius.card, style: .continuous)
-                        .strokeBorder(GDColor.border, lineWidth: 1)
-                )
-                .frame(maxWidth: .infinity, minHeight: height)
-                .accessibilityHidden(true)
+            switch model.loadState {
+            case .readFailed:
+                VStack(alignment: .leading, spacing: GDSpacing.small) {
+                    Text(JournalUnavailableView.failedMessage)
+                        .font(GDFont.body)
+                        .foregroundStyle(GDColor.foreground)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Try again") { model.load() }
+                        .accessibilityIdentifier("today.retryRead")
+                }
+                .accessibilityIdentifier("today.readFailed")
+            case .loading:
+                ProgressView().accessibilityHidden(true)
+            case .ready:
+                editor
+            }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("today.writingArea")
+    }
+
+    private var editor: some View {
+        VStack(alignment: .leading, spacing: GDSpacing.small) {
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: Binding(
+                    get: { model.text },
+                    set: { model.edit($0) }
+                ))
+                .font(GDFont.body)
+                .foregroundStyle(GDColor.foreground)
+                .scrollContentBackground(.hidden)
+                .padding(GDSpacing.small)
+                .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
+                .accessibilityLabel("Today's reflection")
+                .accessibilityIdentifier("today.editor")
+
+                if model.text.isEmpty {
+                    Text(Self.placeholder)
+                        .font(GDFont.body)
+                        .foregroundStyle(GDColor.mutedForeground)
+                        .padding(.horizontal, GDSpacing.small + 5)
+                        .padding(.vertical, GDSpacing.small + 8)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("today.placeholder")
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: GDRadius.card, style: .continuous)
+                    .fill(GDColor.card)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: GDRadius.card, style: .continuous)
+                    .strokeBorder(GDColor.border, lineWidth: 1)
+            )
+
+            if let error = model.saveError {
+                Text(error)
+                    .font(GDFont.sectionLabel)
+                    .foregroundStyle(GDColor.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("today.saveError")
+            }
+            if model.isNearlyFull {
+                Text(TodayEditorModel.nearlyFullMessage)
+                    .font(GDFont.sectionLabel)
+                    .foregroundStyle(GDColor.mutedForeground)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("today.nearlyFull")
+            }
+            if model.hasReflection {
+                Button(role: .destructive) {
+                    confirmingDelete = true
+                } label: {
+                    Label("Delete reflection", systemImage: "trash")
+                        .font(GDFont.sectionLabel)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("today.delete")
+            }
+        }
+        .confirmationDialog(Self.deleteTitle, isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                do { try model.deleteReflection() } catch { deleteFailed = true }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Couldn't delete just now.", isPresented: $deleteFailed) {
+            Button("OK", role: .cancel) {}
+        }
     }
 }
 
