@@ -56,6 +56,7 @@ enum GDFont {
     static let dateTitle = Font.system(.largeTitle, design: .serif).weight(.semibold)
     static let sectionLabel = Font.subheadline.weight(.medium)
     static let body = Font.body
+    static let wisdomPassage = Font.system(.title3, design: .serif)
 }
 
 /// Spacing scale (points).
