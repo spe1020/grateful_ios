@@ -1,8 +1,9 @@
 import Foundation
 import SwiftData
 
-/// M5b-1 (live): adds the local "earlier versions" archive (interop §0.1
-/// 5a, §4.4; Chief P22). Models are the live ones behind the typealiases.
+/// M5b-1 (FROZEN, as shipped in #14 at 53b51e0): adds the local "earlier
+/// versions" archive (interop §0.1 5a, §4.4; Chief P22). Never edit; add a
+/// new version instead.
 enum JournalSchemaV5: VersionedSchema {
     static let versionIdentifier = Schema.Version(5, 0, 0)
     static var models: [any PersistentModel.Type] {
