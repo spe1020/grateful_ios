@@ -29,8 +29,8 @@ final class StorageTests: XCTestCase {
         return store
     }
 
-    private let day = DailyEntry.Day(containing: Date(timeIntervalSince1970: 1_795_300_000),
-                                     timeZone: TimeZone(identifier: "America/Chicago")!)
+    private let day = JournalDay(containing: Date(timeIntervalSince1970: 1_795_300_000),
+                                 timeZone: TimeZone(identifier: "America/Chicago")!)
 
     // MARK: - Criterion 3 / recommendation §7.1
 
@@ -158,13 +158,14 @@ final class StorageTests: XCTestCase {
     func testStoredEntryEncodesAsA36669WithSameDateAndText() throws {
         let store = try openStore()
         let entry = try JournalRepository(context: store.container!.mainContext)
-            .save(text: "one\n\ntwo", for: day, timeZone: TimeZone(identifier: "America/Chicago")!)
+            .save(text: "one\n\ntwo", for: day)
         let event = try DailyEntry.template(day: JournalRepository.day(of: entry), notes: EntryNotes.split(entry.notesText))
         XCTAssertEqual(event.kind, 36669)
         XCTAssertEqual(event.content, entry.notesText)
-        XCTAssertTrue(event.tags.contains(["d", day.dateString]))
-        XCTAssertTrue(event.tags.contains(["published_at", String(day.publishedAt)]))
-        XCTAssertTrue(event.tags.contains(["day", String(day.dayOfYear)]))
+        XCTAssertTrue(event.tags.contains(["d", day.day.dateString]))
+        XCTAssertTrue(event.tags.contains(["published_at", String(day.day.publishedAt)]))
+        XCTAssertTrue(event.tags.contains(["day", String(day.day.dayOfYear)]))
+        XCTAssertEqual(entry.timeZoneID, "America/Chicago")
     }
 
     // MARK: - Criterion 6

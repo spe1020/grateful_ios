@@ -23,8 +23,13 @@ final class JournalStore {
     }
 
     private(set) var state: State = .waitingForUnlock
-    /// Non-sensitive diagnostic: the backup exclusion could not be applied.
+    /// The backup exclusion isn't in effect on this device. While set, the
+    /// app must not say reflections are left out of backups (Chief P10).
     private(set) var backupExclusionFailed = false
+    /// Complete file protection couldn't be applied to the directory or a
+    /// store file. No UI state (no copy claims it); it blocks any future
+    /// "encrypted" claim and is logged (P10.5).
+    private(set) var protectionFailed = false
 
     let location: StoreLocation
 
@@ -44,33 +49,64 @@ final class JournalStore {
     }
 
     /// Open the store if it isn't open yet and protected data is available.
+    /// Called on every foreground: when the store is already open, it
+    /// re-applies the backup exclusion and protection and clears the flags
+    /// once they succeed (P10 item 2).
     func openIfPossible(protectedDataAvailable: Bool) {
-        if case .open = state { return }
+        if case .open = state {
+            if protectedDataAvailable { reapplyProtections() }
+            return
+        }
         guard protectedDataAvailable else {
             state = .waitingForUnlock
             return
         }
         do {
-            let preparation = try location.prepare()
-            backupExclusionFailed = !preparation.backupExclusionApplied
+            let prepared = try location.prepare()
             // An existing store we can't read is "unknown", never "empty":
             // fail here rather than let anything create a new one in its place.
             let path = location.storeURL.path
             if FileManager.default.fileExists(atPath: path), !FileManager.default.isReadableFile(atPath: path) {
+                StorageLog.error("Existing store not readable", file: location.storeURL.lastPathComponent)
                 state = .failed
                 return
             }
             let container = try ModelContainer(for: Self.schema, configurations: Self.configuration(url: location.storeURL))
-            try location.protectFiles()
+            // A protection failure never locks the user out (P10.5).
+            let filesProtected = location.protectFiles()
+            backupExclusionFailed = !prepared.backupExclusionApplied
+            protectionFailed = !(prepared.protectionApplied && filesProtected)
             state = .open(container)
         } catch {
+            StorageLog.error("Journal store could not be opened", file: location.storeURL.lastPathComponent, error: error)
             state = .failed
         }
     }
 
+    private func reapplyProtections() {
+        guard let prepared = try? location.prepare() else {
+            backupExclusionFailed = true
+            protectionFailed = true
+            return
+        }
+        let filesProtected = location.protectFiles()
+        backupExclusionFailed = !prepared.backupExclusionApplied
+        protectionFailed = !(prepared.protectionApplied && filesProtected)
+    }
+
+    /// Set when the save before the device locked failed (Audit M2 I2).
+    /// Unsaved text is still held by the editor, which retries on unlock.
+    private(set) var lockSaveFailed = false
+
     /// Finish any pending save before the device locks the files.
     func saveBeforeLock() {
         guard let context = container?.mainContext, context.hasChanges else { return }
-        try? context.save()
+        do {
+            try context.save()
+            lockSaveFailed = false
+        } catch {
+            lockSaveFailed = true
+            StorageLog.error("Save before lock failed", error: error)
+        }
     }
 }
