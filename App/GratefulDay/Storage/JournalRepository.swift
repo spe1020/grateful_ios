@@ -106,6 +106,20 @@ struct JournalRepository {
         return passed.contains(total) ? total : nil
     }
 
+    // MARK: - One-time flags
+
+    func flag(_ name: String) throws -> Bool {
+        var d = FetchDescriptor<JournalFlag>(predicate: #Predicate { $0.name == name })
+        d.fetchLimit = 1
+        return try !context.fetch(d).isEmpty
+    }
+
+    func setFlag(_ name: String, now: Date = .now) throws {
+        guard try !flag(name) else { return }
+        context.insert(JournalFlag(name: name, setAt: now))
+        try context.save()
+    }
+
     /// The day an entry belongs to, rebuilt from its stored identity.
     static func day(of entry: JournalEntry) -> DailyEntry.Day {
         let zone = TimeZone(identifier: entry.timeZoneID) ?? .current

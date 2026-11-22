@@ -48,7 +48,7 @@ final class JournalStore {
         return nil
     }
 
-    static let schema = Schema([JournalEntry.self, AcknowledgedMilestone.self])
+    static let schema = Schema(versionedSchema: JournalSchemaV3.self)
 
     static func configuration(url: URL) -> ModelConfiguration {
         ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
@@ -78,7 +78,8 @@ final class JournalStore {
                 state = .failed
                 return
             }
-            let container = try ModelContainer(for: Self.schema, configurations: Self.configuration(url: location.storeURL))
+            let container = try ModelContainer(for: Self.schema, migrationPlan: JournalMigrationPlan.self,
+                                               configurations: Self.configuration(url: location.storeURL))
             // A protection failure never locks the user out (P10.5).
             let filesProtected = location.protectFiles()
             protectionFailed = !(prepared.protectionApplied && filesProtected)

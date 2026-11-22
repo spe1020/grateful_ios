@@ -12,6 +12,10 @@ struct TodayView: View {
     /// active and when the calendar day changes.
     @State private var day = JournalDay(containing: .now)
     @State private var editor: TodayEditorModel?
+    @Environment(ReminderModel.self) private var reminder
+    /// The day whose question "Reflect on this" pinned (kept for this session).
+    @State private var pinnedDay: String?
+    @State private var showingReminder = false
 
     var body: some View {
         NavigationStack {
@@ -23,22 +27,38 @@ struct TodayView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("today.date")
-                        // Read first by VoiceOver.
-                        .accessibilitySortPriority(3)
+                        // VoiceOver order: date, passage, author, question, editor.
+                        .accessibilitySortPriority(5)
 
                     if let editor, editor.showWelcomeBack {
                         Text(TodayEditorModel.welcomeBackMessage)
                             .font(GDFont.body)
                             .foregroundStyle(GDColor.mutedForeground)
                             .accessibilityIdentifier("today.welcomeBack")
-                            .accessibilitySortPriority(2)
+                            .accessibilitySortPriority(4)
                     }
 
-                    WisdomPlaceholder()
+                    if let wisdom = DailyWisdom.item(for: day) {
+                        WisdomCard(item: wisdom, isPinned: pinnedDay == day.dateString) {
+                            pinnedDay = day.dateString
+                        }
+                        .accessibilitySortPriority(3)
+                    }
+
+                    if let wisdom = DailyWisdom.item(for: day), pinnedDay == day.dateString, editor != nil {
+                        PinnedQuestion(question: DailyWisdom.prompt(wisdom)) { pinnedDay = nil }
+                            .accessibilitySortPriority(2)
+                    }
 
                     if let editor {
                         TodayEditorSection(model: editor)
                             .accessibilitySortPriority(1)
+                        if editor.showReminderOffer, !reminder.isOn {
+                            ReminderOffer(onChoose: {
+                                editor.dismissReminderOffer()
+                                showingReminder = true
+                            }, onDismiss: { editor.dismissReminderOffer() })
+                        }
                     } else {
                         // Never an empty Today when the journal can't be read.
                         JournalUnavailableView()
@@ -54,6 +74,16 @@ struct TodayView: View {
             .scrollDismissesKeyboard(.interactively)
             .background(GDColor.background.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showingReminder) {
+                NavigationStack {
+                    ReminderView(model: reminder)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { showingReminder = false }
+                            }
+                        }
+                }
+            }
         }
         .onChange(of: store.container.map(ObjectIdentifier.init), initial: true) { _, _ in
             if let container = store.container, editor == nil {
@@ -103,19 +133,6 @@ struct TodayView: View {
     static func title(for day: DailyEntry.Day) -> String {
         let midnight = Date(timeIntervalSince1970: TimeInterval(day.publishedAt))
         return midnight.formatted(.dateTime.weekday(.wide).month(.wide).day())
-    }
-}
-
-/// Space kept for the day's wisdom, which M4 fills in. Purely decorative
-/// until then, so VoiceOver skips it.
-private struct WisdomPlaceholder: View {
-    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 96
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: GDRadius.card, style: .continuous)
-            .fill(GDColor.secondary)
-            .frame(maxWidth: .infinity, minHeight: height)
-            .accessibilityHidden(true)
     }
 }
 
@@ -242,10 +259,11 @@ private struct TodayEditorSection: View {
     }
 }
 
-#Preview("Light") { TodayView().environment(JournalStore()) }
+#Preview("Light") { TodayView().environment(JournalStore()).environment(ReminderModel()) }
 #Preview("Dark, largest text") {
     TodayView()
         .environment(JournalStore())
+        .environment(ReminderModel())
         .preferredColorScheme(.dark)
         .dynamicTypeSize(.accessibility5)
 }

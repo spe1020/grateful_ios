@@ -39,6 +39,8 @@ final class TodayEditorModel {
     private(set) var hasUnsavedChanges = false
     /// A milestone reached by this session's saves, shown once (criterion 7).
     private(set) var milestoneMessage: String?
+    /// The one-time reminder offer, after the 2nd saved reflection (M4).
+    private(set) var showReminderOffer = false
     /// Bumped when an edit is refused at the cap; the editor view reads it.
     private(set) var refusedEdits = 0
 
@@ -115,6 +117,7 @@ final class TodayEditorModel {
         if draft.commit() {
             hasUnsavedChanges = false
             checkMilestone()
+            checkReminderOffer()
             return true
         }
         return false
@@ -137,6 +140,19 @@ final class TodayEditorModel {
     /// changed while the files were protected), read again (Audit M3a L1).
     func retryIfReadFailed() {
         if loadState == .readFailed { load() }
+    }
+
+    func dismissReminderOffer() { showReminderOffer = false }
+
+    /// Offer the reminder once, when the total first reaches 2. The "shown"
+    /// flag is recorded in the journal store when the offer appears.
+    private func checkReminderOffer() {
+        guard hasReflection,
+              let total = try? repository.totalReflectionCount(), total >= 2,
+              let shown = try? repository.flag(JournalFlag.reminderOfferShown), !shown
+        else { return }
+        try? repository.setFlag(JournalFlag.reminderOfferShown, now: now())
+        showReminderOffer = true
     }
 
     private func checkMilestone() {

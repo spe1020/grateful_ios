@@ -162,6 +162,46 @@ final class AppShellUITests: XCTestCase {
         clear(app)
     }
 
+    /// M4 criteria 1–2: today's wisdom shows above the editor, and
+    /// "Reflect on this" pins the question without touching the entry.
+    func testReflectOnThisPinsTheQuestionAndInsertsNothing() {
+        let app = XCUIApplication()
+        app.launch()
+        let editor = app.textViews["today.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        clear(app)
+        XCTAssertTrue(app.staticTexts["wisdom.passage"].exists)
+        let question = app.descendants(matching: .any)["wisdom.question"].label
+        XCTAssertFalse(question.isEmpty)
+        app.buttons["wisdom.reflect"].tap()
+        let pinned = app.staticTexts["today.pinnedQuestion"]
+        XCTAssertTrue(pinned.waitForExistence(timeout: 5))
+        XCTAssertTrue(question.contains(pinned.label) || pinned.label == question)
+        XCTAssertTrue(app.staticTexts["today.placeholder"].exists, "the entry is still empty")
+        XCTAssertEqual((editor.value as? String) ?? "", "")
+        app.buttons["today.unpin"].tap()
+        XCTAssertFalse(pinned.exists)
+    }
+
+    /// M4 criterion 4: a first reflection can be saved within 30 seconds of
+    /// launch, with no account step and no permission prompt.
+    func testFirstReflectionWithinThirtySeconds() {
+        let start = Date()
+        let app = XCUIApplication()
+        app.launch()
+        let editor = app.textViews["today.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        clear(app)
+        editor.tap()
+        editor.typeText("Thirty seconds")
+        app.buttons["today.keyboardDone"].tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertEqual(app.alerts.count, 0, "no permission prompt")
+        XCTAssertTrue(app.buttons["today.delete"].exists, "saved")
+        XCTAssertLessThan(Date().timeIntervalSince(start), 30)
+        clear(app)
+    }
+
     /// At the largest text sizes, scrolled content passes under the
     /// translucent tab bar, and the audit's screenshot then measures text
     /// against the bar's blur. Only that contrast case is skipped; every

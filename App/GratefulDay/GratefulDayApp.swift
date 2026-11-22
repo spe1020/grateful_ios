@@ -6,12 +6,14 @@ import UIKit
 @main
 struct GratefulDayApp: App {
     @State private var store = JournalStore()
+    @State private var reminder = ReminderModel()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(store)
+                .environment(reminder)
                 // Never at App.init: open only once the scene is active and
                 // protected data is available (storage recommendation §1, S2).
                 .onChange(of: scenePhase, initial: true) { _, phase in
