@@ -111,6 +111,41 @@ final class ConflictReviewTests: XCTestCase {
         XCTAssertTrue(try review.load().allAfterSaving)
     }
 
+    /// Chief P33: the Today and day-view links only open the screen for a
+    /// day it lists: never for a blocked today or a today deleted elsewhere.
+    func testListsDayOnlyForDaysWithAChoice() throws {
+        try conflict("2026-11-20", local: "mine", account: "theirs")
+        XCTAssertTrue(try review.listsDay("2026-11-20"))
+
+        let d = day("2026-11-21")
+        let blocked = JournalEntry(dateString: d.dateString, dayOfYear: d.dayOfYear, publishedAt: d.publishedAt,
+                                   timeZoneID: zone.identifier, notesText: "written here", now: t0, ownerPubkey: owner)
+        context.insert(blocked)
+        try context.save()
+        try RemoteImporter(context: context, owner: owner)
+            .apply(["2026-11-21": .blocked(eventId: String(repeating: "a", count: 64), createdAt: 400)], zone: zone)
+        XCTAssertEqual(try row("2026-11-21").syncState, .conflict)
+        XCTAssertFalse(try review.listsDay("2026-11-21"), "blocked today: no link to a screen of blocked rows")
+
+        let base = try remote("2026-11-22", "old", at: 100)
+        let e = day("2026-11-22")
+        let deleted = JournalEntry(dateString: e.dateString, dayOfYear: e.dayOfYear, publishedAt: e.publishedAt,
+                                   timeZoneID: zone.identifier, notesText: "old", now: t0, ownerPubkey: owner)
+        deleted.remoteEventID = base.id
+        deleted.remoteCreatedAt = base.createdAt
+        context.insert(deleted)
+        try context.save()
+        deleted.notesText = "edited here"
+        deleted.syncStateRaw = SyncState.localOnly.rawValue
+        try context.save()
+        let del = try EntryDeletion.template(pubkey: owner, dateString: "2026-11-22", eventId: base.id)
+            .signed(privateKey: secret, createdAt: 200)
+        try RemoteImporter(context: context, owner: owner)
+            .apply(RemoteJournal.days(from: [base, del], owner: owner, privateKey: secret), zone: zone)
+        XCTAssertEqual(try row("2026-11-22").syncState, .conflict)
+        XCTAssertFalse(try review.listsDay("2026-11-22"), "deleted elsewhere: no link to an empty screen")
+    }
+
     // MARK: - Choices
 
     func testKeepBothJoinsAccountFirstAndPublishesNext() throws {

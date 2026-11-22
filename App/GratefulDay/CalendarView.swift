@@ -307,7 +307,7 @@ struct DayDetailView: View {
             blocked = try repository.isBlocked(dateString)
             if let owner = repository.activeOwner {
                 let days = try ConflictReview(context: repository.context, owner: owner).load()
-                inConflict = days.items.contains { $0.dateString == dateString }
+                inConflict = days.items.contains { $0.dateString == dateString }   // same rule as ConflictReview.listsDay
                 // §5: a blocked day with pending edits shows the blocked line too.
                 if days.blocked.contains(where: { $0.dateString == dateString }) { blocked = true }
             }

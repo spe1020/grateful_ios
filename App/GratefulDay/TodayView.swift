@@ -91,7 +91,8 @@ struct TodayView: View {
                                 }
                             }
                         }
-                        if (try? repo.entry(for: day.dateString))??.syncState == .conflict {
+                        if let owner = account.activeOwner,
+                           (try? ConflictReview(context: context, owner: owner).listsDay(day.dateString)) == true {
                             Button { showingConflicts = true } label: {
                                 Text(SyncCopy.alsoChangedElsewhere)
                                     .font(GDFont.sectionLabel)

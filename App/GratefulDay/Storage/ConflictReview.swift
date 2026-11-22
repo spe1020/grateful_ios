@@ -95,6 +95,13 @@ struct ConflictReview {
         return days
     }
 
+    /// The screen would list this day with a choice to make. Blocked days and
+    /// days deleted elsewhere aren't listed, so nothing should link to the
+    /// screen for them (Prep's #16 pass, Chief P33).
+    func listsDay(_ dateString: String) throws -> Bool {
+        try load().items.contains { $0.dateString == dateString }
+    }
+
     /// Apply a choice per day. Days not in `choices`, blocked days and days
     /// no longer in conflict are left alone.
     func apply(_ choices: [String: Choice]) throws {
