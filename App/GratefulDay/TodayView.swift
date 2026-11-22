@@ -5,6 +5,7 @@ import GratefulDayCore
 /// which becomes active in M3.
 struct TodayView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(JournalStore.self) private var store
     /// The local day, using the same day identity as entries on Nostr
     /// (`DailyEntry.Day`, interop spec §1.8). Re-read when the app becomes
     /// active and when the calendar day changes, so Today never shows
@@ -26,8 +27,16 @@ struct TodayView: View {
 
                     WisdomPlaceholder()
 
-                    WritingAreaPlaceholder()
-                        .accessibilitySortPriority(1)
+                    if store.container != nil {
+                        WritingAreaPlaceholder()
+                            .accessibilitySortPriority(1)
+                    } else {
+                        // Never an empty Today when the journal can't be read.
+                        JournalUnavailableView()
+                            .accessibilitySortPriority(1)
+                    }
+
+                    LocalOnlyFooter()
                 }
                 .padding(.horizontal, GDSpacing.medium)
                 .padding(.vertical, GDSpacing.large)
@@ -39,7 +48,8 @@ struct TodayView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { refreshDay() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+        // Posted on an arbitrary thread: hop to main before touching @State (Audit L1).
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
             refreshDay()
         }
     }
@@ -93,9 +103,10 @@ private struct WritingAreaPlaceholder: View {
     }
 }
 
-#Preview("Light") { TodayView() }
+#Preview("Light") { TodayView().environment(JournalStore()) }
 #Preview("Dark, largest text") {
     TodayView()
+        .environment(JournalStore())
         .preferredColorScheme(.dark)
         .dynamicTypeSize(.accessibility5)
 }

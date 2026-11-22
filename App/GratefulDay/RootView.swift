@@ -26,5 +26,5 @@ struct RootView: View {
     }
 }
 
-#Preview("Light") { RootView() }
-#Preview("Dark") { RootView().preferredColorScheme(.dark) }
+#Preview("Light") { RootView().environment(JournalStore()) }
+#Preview("Dark") { RootView().environment(JournalStore()).preferredColorScheme(.dark) }
