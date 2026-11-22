@@ -9,9 +9,10 @@ enum PrivacyCopy {
     /// listed; Prep owns the final wording.
     static let backupExclusionFailedStatement = "Until you connect an account, nothing you write is published. We couldn't keep this iPhone's journal out of backups, so your reflections may be included in iCloud or iPhone backups. We'll keep trying."
 
-    /// The statement that is true on this device right now.
-    static func statement(backupExclusionFailed: Bool) -> String {
-        backupExclusionFailed ? backupExclusionFailedStatement : preAccountStatement
+    /// The statement that is true on this device right now: the backup
+    /// claim only once exclusion is confirmed in effect (P10, P11).
+    static func statement(mayClaimBackupExclusion: Bool) -> String {
+        mayClaimBackupExclusion ? preAccountStatement : backupExclusionFailedStatement
     }
 
     /// The local status label for an entry (Chief P3). No synced state until M5.
@@ -25,7 +26,7 @@ struct PrivacyView: View {
     var body: some View {
         ScrollView {
             // Never claims backup exclusion while it isn't in effect (P10).
-            Text(PrivacyCopy.statement(backupExclusionFailed: store.backupExclusionFailed))
+            Text(PrivacyCopy.statement(mayClaimBackupExclusion: store.mayClaimBackupExclusion))
                 .font(GDFont.body)
                 .foregroundStyle(GDColor.foreground)
                 .fixedSize(horizontal: false, vertical: true)

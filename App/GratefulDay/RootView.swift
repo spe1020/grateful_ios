@@ -15,7 +15,7 @@ struct RootView: View {
             TodayView()
                 .tabItem { Label("Today", systemImage: "sun.max") }
                 .tag(AppTab.today)
-            CalendarPlaceholderView()
+            CalendarView(selection: $selection)
                 .tabItem { Label("Calendar", systemImage: "calendar") }
                 .tag(AppTab.calendar)
             SettingsPlaceholderView()

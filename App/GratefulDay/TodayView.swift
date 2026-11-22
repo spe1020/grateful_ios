@@ -78,6 +78,7 @@ struct TodayView: View {
         .onReceive(NotificationCenter.default
             .publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)
             .receive(on: RunLoop.main)) { _ in
+            editor?.retryIfReadFailed()
             editor?.flush()
         }
         // Posted on an arbitrary thread: hop to main before touching @State.
@@ -122,6 +123,7 @@ private struct WisdomPlaceholder: View {
 private struct TodayEditorSection: View {
     @Bindable var model: TodayEditorModel
     @State private var confirmingDelete = false
+    @FocusState private var editorFocused: Bool
     @State private var deleteFailed = false
     @ScaledMetric(relativeTo: .body) private var minHeight: CGFloat = 180
 
@@ -150,7 +152,9 @@ private struct TodayEditorSection: View {
     }
 
     private var editor: some View {
-        VStack(alignment: .leading, spacing: GDSpacing.small) {
+        // Read so a refused edit redraws the editor from the kept text.
+        let _ = model.refusedEdits
+        return VStack(alignment: .leading, spacing: GDSpacing.small) {
             ZStack(alignment: .topLeading) {
                 TextEditor(text: Binding(
                     get: { model.text },
@@ -161,8 +165,18 @@ private struct TodayEditorSection: View {
                 .scrollContentBackground(.hidden)
                 .padding(GDSpacing.small)
                 .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
+                .focused($editorFocused)
                 .accessibilityLabel("Today's reflection")
                 .accessibilityIdentifier("today.editor")
+                .toolbar {
+                    // The keyboard covers the tab bar; this puts it away
+                    // (typing is already saved as you go).
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") { editorFocused = false }
+                            .accessibilityIdentifier("today.keyboardDone")
+                    }
+                }
 
                 if model.text.isEmpty {
                     Text(Self.placeholder)
@@ -189,6 +203,13 @@ private struct TodayEditorSection: View {
                     .foregroundStyle(GDColor.foreground)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("today.saveError")
+            }
+            if let milestone = model.milestoneMessage {
+                Text(milestone)
+                    .font(GDFont.sectionLabel)
+                    .foregroundStyle(GDColor.mutedForeground)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("today.milestone")
             }
             if model.isNearlyFull {
                 Text(TodayEditorModel.nearlyFullMessage)

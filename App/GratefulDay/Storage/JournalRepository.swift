@@ -66,6 +66,46 @@ struct JournalRepository {
         return try context.fetch(descriptor).first?.dateString
     }
 
+    // MARK: - Calendar and counts
+
+    /// Dates with a reflection between two `YYYY-MM-DD` dates, inclusive.
+    /// Fetches only the date column, so a month opens quickly.
+    func reflectionDates(from start: String, through end: String) throws -> Set<String> {
+        var descriptor = FetchDescriptor<JournalEntry>(
+            predicate: #Predicate { $0.dateString >= start && $0.dateString <= end && $0.deletedAt == nil && $0.notesText != "" }
+        )
+        descriptor.propertiesToFetch = [\.dateString]
+        return Set(try context.fetch(descriptor).map(\.dateString))
+    }
+
+    /// Days with a reflection, in total.
+    func totalReflectionCount() throws -> Int {
+        try context.fetchCount(FetchDescriptor<JournalEntry>(
+            predicate: #Predicate { $0.deletedAt == nil && $0.notesText != "" }
+        ))
+    }
+
+    // MARK: - Milestones (totals only, shown once)
+
+    static let milestones = [1, 7, 30, 100, 365]
+
+    /// The milestone to show after a save: only when the total is exactly a
+    /// milestone that hasn't been shown. Every milestone the total has
+    /// passed is recorded as shown, silently when it wasn't hit exactly
+    /// (for example after a large import), so none is ever shown late or
+    /// with the wrong number (Chief P12).
+    func takeMilestone(now: Date = .now) throws -> Int? {
+        let total = try totalReflectionCount()
+        let shown = Set(try context.fetch(FetchDescriptor<AcknowledgedMilestone>()).map(\.total))
+        let passed = Self.milestones.filter { $0 <= total && !shown.contains($0) }
+        guard !passed.isEmpty else { return nil }
+        for m in passed {
+            context.insert(AcknowledgedMilestone(total: m, acknowledgedAt: now))
+        }
+        try context.save()
+        return passed.contains(total) ? total : nil
+    }
+
     /// The day an entry belongs to, rebuilt from its stored identity.
     static func day(of entry: JournalEntry) -> DailyEntry.Day {
         let zone = TimeZone(identifier: entry.timeZoneID) ?? .current

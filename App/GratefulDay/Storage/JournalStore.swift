@@ -30,6 +30,12 @@ final class JournalStore {
     /// store file. No UI state (no copy claims it); it blocks any future
     /// "encrypted" claim and is logged (P10.5).
     private(set) var protectionFailed = false
+    /// True once a backup-exclusion check has succeeded in this launch. Until
+    /// then the app makes no backup claim (Chief P11).
+    private(set) var backupExclusionConfirmed = false
+
+    /// Whether the app may say reflections are left out of backups right now.
+    var mayClaimBackupExclusion: Bool { backupExclusionConfirmed && !backupExclusionFailed }
 
     let location: StoreLocation
 
@@ -42,7 +48,7 @@ final class JournalStore {
         return nil
     }
 
-    static let schema = Schema([JournalEntry.self])
+    static let schema = Schema([JournalEntry.self, AcknowledgedMilestone.self])
 
     static func configuration(url: URL) -> ModelConfiguration {
         ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
@@ -63,6 +69,7 @@ final class JournalStore {
         }
         do {
             let prepared = try location.prepare()
+            record(prepared)
             // An existing store we can't read is "unknown", never "empty":
             // fail here rather than let anything create a new one in its place.
             let path = location.storeURL.path
@@ -74,7 +81,6 @@ final class JournalStore {
             let container = try ModelContainer(for: Self.schema, configurations: Self.configuration(url: location.storeURL))
             // A protection failure never locks the user out (P10.5).
             let filesProtected = location.protectFiles()
-            backupExclusionFailed = !prepared.backupExclusionApplied
             protectionFailed = !(prepared.protectionApplied && filesProtected)
             state = .open(container)
         } catch {
@@ -89,9 +95,15 @@ final class JournalStore {
             protectionFailed = true
             return
         }
+        record(prepared)
         let filesProtected = location.protectFiles()
-        backupExclusionFailed = !prepared.backupExclusionApplied
         protectionFailed = !(prepared.protectionApplied && filesProtected)
+    }
+
+    private func record(_ prepared: StoreLocation.Result) {
+        backupExclusionFailed = !prepared.backupExclusionApplied
+        if prepared.backupExclusionApplied { backupExclusionConfirmed = true }
+        if !prepared.protectionApplied { protectionFailed = true }
     }
 
     /// Set when the save before the device locked failed (Audit M2 I2).

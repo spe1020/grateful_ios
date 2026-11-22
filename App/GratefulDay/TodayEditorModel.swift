@@ -37,6 +37,10 @@ final class TodayEditorModel {
     private(set) var showWelcomeBack = false
     private(set) var draft: DraftBuffer!
     private(set) var hasUnsavedChanges = false
+    /// A milestone reached by this session's saves, shown once (criterion 7).
+    private(set) var milestoneMessage: String?
+    /// Bumped when an edit is refused at the cap; the editor view reads it.
+    private(set) var refusedEdits = 0
 
     private let repository: JournalRepository
     private let now: () -> Date
@@ -87,7 +91,14 @@ final class TodayEditorModel {
     func edit(_ newText: String) -> Bool {
         guard isEditable else { return false }
         guard newText != draft.text else { return true }
-        guard EntryNotes.normalize(newText).utf8.count <= Self.maxBytes else { return false }
+        guard EntryNotes.normalize(newText).utf8.count <= Self.maxBytes else {
+            // Make the editor redraw from the kept text, so it drops the
+            // refused characters instead of showing text that won't be saved
+            // (Audit M3a L2). Re-assigning the same text wouldn't notify:
+            // Observation skips equal values.
+            refusedEdits += 1
+            return false
+        }
         draft.text = newText
         hasUnsavedChanges = true
         scheduleSave()
@@ -103,6 +114,7 @@ final class TodayEditorModel {
         guard hasUnsavedChanges, isEditable else { return !hasUnsavedChanges }
         if draft.commit() {
             hasUnsavedChanges = false
+            checkMilestone()
             return true
         }
         return false
@@ -117,7 +129,24 @@ final class TodayEditorModel {
         guard flush() else { return }
         day = newDay
         loadState = .loading
+        milestoneMessage = nil
         load()
+    }
+
+    /// After a phone unlock: if the read had failed (for example the day
+    /// changed while the files were protected), read again (Audit M3a L1).
+    func retryIfReadFailed() {
+        if loadState == .readFailed { load() }
+    }
+
+    private func checkMilestone() {
+        guard hasReflection, let reached = try? repository.takeMilestone(now: now()) else { return }
+        milestoneMessage = Self.milestoneText(reached)
+    }
+
+    /// DRAFT copy for Prep/Growth: quiet, one line, totals only.
+    static func milestoneText(_ total: Int) -> String {
+        total == 1 ? "Your first reflection." : "That's \(total) reflections."
     }
 
     /// Delete the day's reflection (after the user confirmed).
