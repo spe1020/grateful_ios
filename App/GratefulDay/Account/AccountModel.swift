@@ -245,8 +245,9 @@ final class AccountModel {
             StorageLog.error("Sign-out: removing the journal key failed")
             return .stayedSignedIn
         case .unconfirmed:
+            // State is left as it was, so [Try again] re-runs the delete and
+            // its confirmation instead of being blocked by a locked re-read.
             StorageLog.error("Sign-out: couldn't confirm the journal key was removed")
-            refresh(context: context)
             return .unconfirmed
         }
         do {
@@ -288,8 +289,9 @@ final class AccountModel {
                 StorageLog.error("Remove account: removing the journal key failed")
                 return .keyDeleteFailed
             case .unconfirmed:
+                // The journal isn't touched until the delete is confirmed;
+                // state is kept so [Try again] can re-run it (Prep, F8).
                 StorageLog.error("Remove account: couldn't confirm the journal key was removed")
-                refresh(context: context)
                 return .keyDeleteUnconfirmed
             }
         }

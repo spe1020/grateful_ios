@@ -16,6 +16,8 @@ struct AccountView: View {
     @State private var sheet: Sheet?
     @State private var confirmingCreate = false
     @State private var notice: String?
+    /// The flow [Try again] reopens, for notices that offer it.
+    @State private var retry: Sheet?
 
     var body: some View {
         List {
@@ -56,7 +58,17 @@ struct AccountView: View {
             }
 
             if let notice {
-                Section { Text(notice).accessibilityIdentifier("account.notice") }
+                Section {
+                    Text(notice).accessibilityIdentifier("account.notice")
+                    if let retry {
+                        Button(AccountCopy.tryAgain) {
+                            self.notice = nil
+                            self.retry = nil
+                            sheet = retry
+                        }
+                        .accessibilityIdentifier("account.noticeRetry")
+                    }
+                }
             }
 
             switch account.state {
@@ -104,11 +116,15 @@ struct AccountView: View {
     /// A sheet finished. If it connected an account, offer the backup next.
     private func done(_ result: FlowResult) {
         sheet = nil
+        retry = nil
         switch result {
         case .connected:
             DispatchQueue.main.async { sheet = .backupOffer }
         case .message(let text):
             notice = text
+        case .retryable(let text, let flow):
+            notice = text
+            retry = flow
         case .closed:
             break
         }
@@ -120,7 +136,11 @@ struct AccountView: View {
     }
 }
 
-enum FlowResult { case connected, message(String), closed }
+enum FlowResult {
+    case connected, message(String), closed
+    /// A notice with [Try again], which reopens `flow` (Prep F7/F8).
+    case retryable(String, AccountView.Sheet)
+}
 
 // MARK: - F3 Restore
 
@@ -353,7 +373,7 @@ struct SignOutView: View {
         switch account.signOut(context: context) {
         case .signedOut: onDone(.closed)
         case .stayedSignedIn, .blocked: onDone(.message(AccountCopy.signOutFailed))
-        case .unconfirmed: onDone(.message(AccountCopy.keyRemovalUnconfirmed))
+        case .unconfirmed: onDone(.retryable(AccountCopy.signOutUnconfirmed, .signOut))
         }
     }
 }
@@ -432,7 +452,7 @@ struct RemoveDataView: View {
         case .keyDeleteFailed, .blocked:
             onDone(.message(AccountCopy.removeNothingDone))
         case .keyDeleteUnconfirmed:
-            onDone(.message(AccountCopy.keyRemovalUnconfirmed))
+            onDone(.retryable(AccountCopy.removeUnconfirmed, .remove))
         case .journalNotRemoved:
             onDone(.message(AccountCopy.removeKeyOnly))
         }

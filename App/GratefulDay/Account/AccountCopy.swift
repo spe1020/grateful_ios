@@ -87,9 +87,10 @@ enum AccountCopy {
     static let deleteBackupBody = "If you delete it, you can't restore this journal key later, and reflections saved to your account can only be opened with it."
     static let keepBackup = "Keep backup"
     static let deleteBackup = "Delete backup"
-    /// DRAFT (Prep owes the final line, Audit #13 L1): the key delete
-    /// succeeded but couldn't be confirmed. Makes no claim either way.
-    static let keyRemovalUnconfirmed = "We couldn't confirm whether your journal key was removed. Your reflections on this iPhone haven't been touched. Try again."
+    /// Key delete not confirmed (Prep, flows doc "Key delete not confirmed",
+    /// Audit #13 L1). Makes no claim about the key. Shown with [Try again].
+    static let removeUnconfirmed = "We couldn't confirm that your journal key was removed from this iPhone. Your reflections haven't been deleted."
+    static let signOutUnconfirmed = "We couldn't confirm that you've been signed out on this iPhone. Your reflections are still here."
     /// DRAFT (Audit M5a L3).
     static func backupsSkipped(_ n: Int) -> String {
         n == 1 ? "One backup couldn't be read and isn't shown." : "\(n) backups couldn't be read and aren't shown."

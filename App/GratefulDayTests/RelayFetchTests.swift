@@ -22,7 +22,13 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
         self.pageCap = pageCap
     }
 
+    /// Like `URLSessionWebSocketTask.cancel`, closing is terminal: any send
+    /// or receive afterwards throws (Audit, #14 early read).
+    private var isClosed = false
+    private(set) var closeCount = 0
+
     func send(_ text: String) async throws {
+        if lock.withLock({ isClosed }) { throw URLError(.cancelled) }
         guard let array = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any],
               array.first as? String == "REQ", let sub = array[1] as? String, let f = array[2] as? [String: Any] else { return }
         lock.withLock { requests.append(f) }
@@ -53,14 +59,20 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
     func receive() async throws -> String {
         try await withCheckedThrowingContinuation { c in
             lock.lock()
+            if isClosed { lock.unlock(); c.resume(throwing: URLError(.cancelled)); return }
             if !outbox.isEmpty { let s = outbox.removeFirst(); lock.unlock(); c.resume(returning: s); return }
             waiter = c
             lock.unlock()
         }
     }
 
+    /// A new `connect` is a new socket (fetches here are sequential).
+    func reopen() { lock.withLock { isClosed = false } }
+
     func close() {
         lock.lock()
+        isClosed = true
+        closeCount += 1
         let w = waiter
         waiter = nil
         lock.unlock()
@@ -72,6 +84,7 @@ struct FakeTransport: RelayTransport {
     let relays: [URL: FakeRelay]
     func connect(_ url: URL) async throws -> RelayConnection {
         guard let r = relays[url], r.behavior != .refuseConnect else { throw URLError(.cannotConnectToHost) }
+        r.reopen()
         return r
     }
 }
@@ -112,6 +125,18 @@ final class RelayFetchTests: XCTestCase {
         XCTAssertEqual(Set(result.events.map(\.id)), Set(events.map(\.id)), "every page collected")
         XCTAssertEqual(result.outcomes[relay.url], .answered)
         XCTAssertGreaterThanOrEqual(relay.requests.count, 3, "paged by until")
+    }
+
+    /// Audit, #14 early read: closing is terminal on a real socket, so
+    /// paging must reuse one open connection and still end `.answered`.
+    func testPagingKeepsConnectionOpenAndEndsAnswered() async throws {
+        let events = try (1...5).map { try entry(String(format: "2026-10-%02d", $0), "day \($0)", at: 2_000 + $0) }
+        let relay = FakeRelay("paged", events: events, pageCap: 2)
+        let result = await fetcher([relay]).fetch(filter(), from: [relay.url])
+        XCTAssertEqual(result.outcomes[relay.url], .answered, "more than one page, still answered")
+        XCTAssertEqual(Set(result.events.map(\.id)), Set(events.map(\.id)))
+        XCTAssertGreaterThanOrEqual(relay.requests.count, 3, "pages 1–3 plus the empty confirming page")
+        XCTAssertEqual(relay.closeCount, 1, "closed once, after the last page")
     }
 
     func testTimeoutIsUnknownNotEmpty() async {

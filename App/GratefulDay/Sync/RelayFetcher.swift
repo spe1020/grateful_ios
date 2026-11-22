@@ -48,6 +48,7 @@ struct RelayFetcher: Sendable {
     private func fetchAll(_ filter: RelayFilter, from url: URL) async -> (URL, [NostrEvent], RelayOutcome) {
         let connection: RelayConnection
         do { connection = try await transport.connect(url) } catch { return (url, [], .failed("connect")) }
+        // One connection for every page; closed once, here.
         defer { connection.close() }
         var seen: [String: NostrEvent] = [:]
         var until: Int? = nil
@@ -108,7 +109,11 @@ struct RelayFetcher: Sendable {
             }
             let first = await group.next() ?? nil
             group.cancelAll()
-            connection.close()
+            // The socket stays open across pages; each page ends its own
+            // subscription with CLOSE (Audit, #14 early read). Only an
+            // unresolved page closes it, which also ends the pending
+            // receive so the group can finish; `fetchAll` stops there.
+            if first != .answered { connection.close() }
             return (collected.events, first ?? .timedOut)
         }
     }

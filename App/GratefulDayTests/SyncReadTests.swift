@@ -105,7 +105,8 @@ final class SyncReadTests: XCTestCase {
         _ = try vault.savePrimaryVerified(secret)
         keychain.deleteStatus = errSecInternalError
         XCTAssertEqual(vault.deletePrimary(), .deleteFailed)
-        XCTAssertFalse(AccountCopy.keyRemovalUnconfirmed.contains("Nothing has been deleted"))
+        XCTAssertFalse(AccountCopy.removeUnconfirmed.contains("Nothing has been deleted"))
+        XCTAssertFalse(AccountCopy.signOutUnconfirmed.contains("Nothing has changed"))
     }
 }
 
@@ -158,5 +159,31 @@ final class StoreLifecycleTests: XCTestCase {
         for m in try ctx.fetch(FetchDescriptor<AccountMarker>()) { ctx.delete(m) }
         try ctx.save()
         XCTAssertEqual(account.signOut(context: ctx), .signedOut, "the missing marker is written, not a block")
+    }
+
+    /// Prep F7/F8 [Try again]: an unconfirmed delete leaves the account
+    /// where it was, so retrying re-runs the delete and its confirmation
+    /// rather than being blocked; the journal is untouched until then.
+    func testUnconfirmedKeyDeleteCanBeRetried() throws {
+        let store = JournalStore(location: location(), defaults: defaults)
+        store.openIfPossible(protectedDataAvailable: true)
+        let ctx = store.container!.mainContext
+        let keychain = FakeKeychain()
+        let secret = try NostrKeys.generatePrivateKey()
+        _ = keychain.add(secret, service: KeyVault.primaryService, account: KeyVault.primaryAccount,
+                         synchronizable: false, accessibility: kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
+        let account = AccountModel(vault: KeyVault(keychain: keychain))
+        account.refresh(context: ctx)
+        let pubkey = KeyVault.pubkeyHex(for: secret)!
+        let day = JournalDay(containing: Date(timeIntervalSince1970: 1_795_300_000))
+        try JournalRepository(context: ctx, activeOwner: pubkey).save(text: "kept", for: day)
+
+        keychain.forcedRead = .locked
+        XCTAssertEqual(account.removeAccountAndData(context: ctx, store: store), .keyDeleteUnconfirmed)
+        XCTAssertEqual(account.state, .connected(pubkey: pubkey), "not moved to a state that blocks the retry")
+        XCTAssertEqual(try JournalRepository(context: store.container!.mainContext, activeOwner: pubkey).entry(for: day.dateString)?.notesText, "kept")
+
+        keychain.forcedRead = nil
+        XCTAssertEqual(account.removeAccountAndData(context: store.container!.mainContext, store: store), .removed, "the retry confirms and only then clears")
     }
 }
