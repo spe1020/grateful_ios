@@ -170,6 +170,7 @@ struct TodayView: View {
 
 /// The writing area, its notes and the delete action.
 private struct TodayEditorSection: View {
+    @Environment(JournalStore.self) private var store
     @Bindable var model: TodayEditorModel
     @State private var confirmingDelete = false
     @FocusState private var editorFocused: Bool
@@ -184,7 +185,7 @@ private struct TodayEditorSection: View {
             switch model.loadState {
             case .readFailed:
                 VStack(alignment: .leading, spacing: GDSpacing.small) {
-                    Text(JournalUnavailableView.failedMessage)
+                    Text(JournalUnavailableView.failedText(removalIncomplete: store.removalIncomplete))
                         .font(GDFont.body)
                         .foregroundStyle(GDColor.foreground)
                         .fixedSize(horizontal: false, vertical: true)

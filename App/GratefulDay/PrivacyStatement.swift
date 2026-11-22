@@ -82,6 +82,13 @@ struct JournalUnavailableView: View {
     static let lockedMessage = "Unlock your iPhone to open your journal."
     /// Prep (M2 copy review): says what happened to the data.
     static let failedMessage = "Your journal couldn't be opened just now. Nothing has been deleted."
+
+    /// What a failed open says. After an unfinished "Remove account and
+    /// local data" some files may already be gone, so it uses Prep's F8
+    /// failure copy instead and never claims nothing was deleted.
+    static func failedText(removalIncomplete: Bool) -> String {
+        removalIncomplete ? AccountCopy.removeKeyOnly : failedMessage
+    }
     /// Added after a "Try again" that fails again.
     static let repeatedFailureMessage = "If this keeps happening, try restarting your iPhone."
 
@@ -90,7 +97,9 @@ struct JournalUnavailableView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: GDSpacing.small) {
             if case .failed = store.state {
-                Text(Self.failedMessage)
+                let _ = store.removalIncompleteVersion
+                Text(Self.failedText(removalIncomplete: store.removalIncomplete))
+                    .accessibilityIdentifier("journal.failedText")
                     .font(GDFont.body)
                     .foregroundStyle(GDColor.foreground)
                     .fixedSize(horizontal: false, vertical: true)
@@ -102,7 +111,12 @@ struct JournalUnavailableView: View {
                         .accessibilityIdentifier("journal.repeatedFailure")
                 }
                 Button("Try again") {
-                    store.openIfPossible(protectedDataAvailable: UIApplication.shared.isProtectedDataAvailable)
+                    if store.removalIncomplete {
+                        // Finish the removal the person already confirmed.
+                        _ = store.removeAllData()
+                    } else {
+                        store.openIfPossible(protectedDataAvailable: UIApplication.shared.isProtectedDataAvailable)
+                    }
                     if case .failed = store.state { failedRetries += 1 }
                 }
                 .accessibilityIdentifier("journal.retry")
