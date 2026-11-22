@@ -28,10 +28,18 @@ final class CalendarModel {
     private let today: () -> JournalDay
     private let calendar: Calendar
 
-    init(repository: JournalRepository, today: @escaping () -> JournalDay = { JournalDay(containing: .now) }) {
+    /// `userCalendar` supplies only locale and first weekday. Dates, months
+    /// and the grid are always Gregorian, because stored entries and Today
+    /// use Gregorian `YYYY-MM-DD` days (`DailyEntry.Day`). Using the user's
+    /// calendar here broke Buddhist and Japanese calendars (Audit M3b M1).
+    init(repository: JournalRepository,
+         today: @escaping () -> JournalDay = { JournalDay(containing: .now) },
+         userCalendar: Calendar = .current) {
         self.repository = repository
         self.today = today
-        var cal = Calendar.current
+        var cal = Calendar(identifier: .gregorian)
+        cal.locale = userCalendar.locale
+        cal.firstWeekday = userCalendar.firstWeekday
         cal.timeZone = today().timeZone
         self.calendar = cal
         self.monthStart = cal.date(from: cal.dateComponents([.year, .month], from: today().start))!
@@ -40,7 +48,21 @@ final class CalendarModel {
 
     var monthCount: Int { reflectionDates.count }
 
-    var monthTitle: String { monthStart.formatted(.dateTime.month(.wide).year()) }
+    /// Month name and year of the Gregorian month the grid shows, in the
+    /// user's language.
+    var monthTitle: String {
+        var style = Date.FormatStyle(date: .omitted, time: .omitted, locale: calendar.locale ?? .current,
+                                     calendar: calendar, timeZone: calendar.timeZone)
+        style = style.month(.wide).year()
+        return monthStart.formatted(style)
+    }
+
+    /// Weekday headings, starting at the user's first weekday.
+    var weekdaySymbols: [String] {
+        let symbols = calendar.veryShortStandaloneWeekdaySymbols
+        let first = calendar.firstWeekday - 1
+        return Array(symbols[first...] + symbols[..<first])
+    }
 
     var canShowNextMonth: Bool {
         let current = calendar.date(from: calendar.dateComponents([.year, .month], from: today().start))!

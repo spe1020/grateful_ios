@@ -33,6 +33,30 @@ final class CalendarTests: XCTestCase {
         XCTAssertFalse(days.contains { $0.isFuture && $0.dateString <= "2026-11-21" })
     }
 
+    /// Audit M3b M1: Buddhist and Japanese calendar users get the same
+    /// Gregorian grid as everyone else (entries use Gregorian dates).
+    func testNonGregorianUserCalendarsShowTheSameGrid() throws {
+        try repo.save(text: "a", for: day("2026-11-03"))
+        try repo.save(text: "b", for: day("2026-11-21"))
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.locale = Locale(identifier: "en_US")
+        let reference = CalendarModel(repository: repo, today: { self.day("2026-11-21") }, userCalendar: gregorian)
+        XCTAssertEqual(reference.monthTitle, "November 2026")
+        for id in [Calendar.Identifier.buddhist, .japanese, .islamicUmmAlQura, .hebrew, .persian] {
+            var userCal = Calendar(identifier: id)
+            userCal.locale = Locale(identifier: "en_US")
+            let model = CalendarModel(repository: repo, today: { self.day("2026-11-21") }, userCalendar: userCal)
+            let days = model.grid.compactMap { $0 }
+            XCTAssertEqual(days.count, 30, "\(id)")
+            XCTAssertEqual(days.first?.dateString, "2026-11-01", "\(id)")
+            XCTAssertEqual(days.first { $0.isToday }?.dateString, "2026-11-21", "\(id)")
+            XCTAssertEqual(days.filter(\.hasReflection).map(\.dateString), ["2026-11-03", "2026-11-21"], "\(id)")
+            XCTAssertEqual(days.filter(\.isFuture).count, 9, "\(id)")
+            XCTAssertEqual(model.monthCount, 2, "\(id)")
+            XCTAssertEqual(model.monthTitle, reference.monthTitle, "\(id): the title names the Gregorian month")
+        }
+    }
+
     func testGridAlignsTheFirstWeekday() {
         let model = CalendarModel(repository: repo, today: { self.day("2026-11-21") })
         var cal = Calendar.current
@@ -88,10 +112,32 @@ final class CalendarTests: XCTestCase {
         XCTAssertNil(try repo.takeMilestone())
     }
 
-    func testReachingSeveralAtOnceShowsOnlyTheHighest() throws {
+    func testReachingSeveralAtOnceShowsOnlyTheExactOne() throws {
         for d in 1...7 { try repo.save(text: "x", for: day(String(format: "2026-11-%02d", d))) }
         XCTAssertEqual(try repo.takeMilestone(), 7)
-        XCTAssertNil(try repo.takeMilestone(), "1 is acknowledged with 7, never shown late")
+        XCTAssertNil(try repo.takeMilestone(), "1 is recorded with 7, never shown late")
+    }
+
+    /// Chief P12: a large import (M5) passes milestones without hitting one
+    /// exactly: no line, and none of them is shown later with a wrong number.
+    func testImportOf201EntriesShowsNoMilestoneLine() throws {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = zone
+        let start = day("2026-01-01").start
+        for i in 0..<201 {
+            let d = JournalDay(containing: cal.date(byAdding: .day, value: i, to: start)!.addingTimeInterval(43_200), timeZone: zone)
+            container.mainContext.insert(JournalEntry(dateString: d.day.dateString, dayOfYear: d.day.dayOfYear,
+                                                      publishedAt: d.day.publishedAt, timeZoneID: zone.identifier,
+                                                      notesText: "imported", now: .now))
+        }
+        try container.mainContext.save()
+        XCTAssertNil(try repo.takeMilestone(), "201 is not a milestone")
+        let shown = Set(try container.mainContext.fetch(FetchDescriptor<AcknowledgedMilestone>()).map(\.total))
+        XCTAssertEqual(shown, [1, 7, 30, 100], "passed milestones are recorded silently")
+        // The editor shows no line either.
+        let model = TodayEditorModel(repository: repo, day: day("2026-11-21"))
+        model.edit("one more"); model.flush()
+        XCTAssertNil(model.milestoneMessage, "202 is not a milestone")
     }
 
     func testDeletingAndRewritingDoesNotRepeatAMilestone() throws {

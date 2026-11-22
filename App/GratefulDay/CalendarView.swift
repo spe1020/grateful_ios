@@ -45,12 +45,6 @@ struct CalendarView: View {
 private struct CalendarContent: View {
     @Bindable var model: CalendarModel
 
-    static var weekdaySymbols: [String] {
-        let cal = Calendar.current
-        let symbols = cal.veryShortStandaloneWeekdaySymbols
-        let first = cal.firstWeekday - 1
-        return Array(symbols[first...] + symbols[..<first])
-    }
     @Binding var selection: AppTab
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
 
@@ -104,7 +98,7 @@ private struct CalendarContent: View {
                 LazyVGrid(columns: columns, spacing: 4) {
                     // Weekday headings in the user's locale and first weekday.
                     // Hidden from VoiceOver: each day's label names its weekday.
-                    ForEach(Array(Self.weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
+                    ForEach(Array(model.weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
                         Text(symbol)
                             .font(GDFont.sectionLabel)
                             .foregroundStyle(GDColor.foreground)

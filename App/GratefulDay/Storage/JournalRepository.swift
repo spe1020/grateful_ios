@@ -89,18 +89,21 @@ struct JournalRepository {
 
     static let milestones = [1, 7, 30, 100, 365]
 
-    /// The highest milestone the total has reached that hasn't been shown
-    /// yet. Showing it acknowledges it and every lower one, so they never
-    /// stack or repeat.
+    /// The milestone to show after a save: only when the total is exactly a
+    /// milestone that hasn't been shown. Every milestone the total has
+    /// passed is recorded as shown, silently when it wasn't hit exactly
+    /// (for example after a large import), so none is ever shown late or
+    /// with the wrong number (Chief P12).
     func takeMilestone(now: Date = .now) throws -> Int? {
         let total = try totalReflectionCount()
         let shown = Set(try context.fetch(FetchDescriptor<AcknowledgedMilestone>()).map(\.total))
-        guard let reached = Self.milestones.last(where: { $0 <= total }), !shown.contains(reached) else { return nil }
-        for m in Self.milestones where m <= reached && !shown.contains(m) {
+        let passed = Self.milestones.filter { $0 <= total && !shown.contains($0) }
+        guard !passed.isEmpty else { return nil }
+        for m in passed {
             context.insert(AcknowledgedMilestone(total: m, acknowledgedAt: now))
         }
         try context.save()
-        return reached
+        return passed.contains(total) ? total : nil
     }
 
     /// The day an entry belongs to, rebuilt from its stored identity.
