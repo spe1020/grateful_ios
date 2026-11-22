@@ -326,7 +326,7 @@ final class AccountTests: XCTestCase {
         let pub = try account.createKey(context: context)
         try insert("mine", on: "2026-11-20", owner: pub)
         keychain.deleteStatus = errSecInternalError
-        XCTAssertEqual(account.removeAccountAndData(context: context, store: store), .keyNotRemoved)
+        XCTAssertEqual(account.removeAccountAndData(context: context, store: store), .keyDeleteFailed)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<JournalEntry>()), 1, "nothing deleted")
         XCTAssertEqual(account.state, .connected(pubkey: pub))
     }

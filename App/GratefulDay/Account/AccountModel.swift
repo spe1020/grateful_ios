@@ -93,8 +93,13 @@ final class AccountModel {
             switch m?.state {
             case nil:
                 // Reinstall: the key survived, the journal didn't. Treat as
-                // connected; M5b fetches first before anything else.
-                try? setMarker(context, pubkey: pubkey, state: .connected)
+                // connected; M5b fetches first before anything else. A failed
+                // marker write is logged and retried when it's needed (L4).
+                do {
+                    try setMarker(context, pubkey: pubkey, state: .connected)
+                } catch {
+                    StorageLog.error("Recording the connected account failed", error: error)
+                }
                 state = .connected(pubkey: pubkey)
             case .connected:
                 state = m!.pubkey == pubkey ? .connected(pubkey: pubkey)
@@ -173,6 +178,15 @@ final class AccountModel {
     // MARK: Backup
 
     var backups: KeyVault.BackupList { vault.listBackups() }
+    var skippedBackups: Int { vault.skippedBackups }
+
+    /// The connected account's key, for decrypting fetched entries. Nil
+    /// unless connected.
+    func connectedKey() -> (secret: Data, pubkey: String)? {
+        guard case .connected(let p) = state, case .key(let secret, let pubkey) = vault.readPrimary(), pubkey == p
+        else { return nil }
+        return (secret, pubkey)
+    }
 
     func hasBackup(for pubkey: String) -> Bool? {
         guard case .backups(let list) = vault.listBackups() else { return nil }
@@ -200,17 +214,40 @@ final class AccountModel {
         try? JournalRepository(context: context, activeOwner: activeOwner).totalReflectionCount()
     }
 
-    enum SignOutResult: Equatable { case signedOut, stayedSignedIn, blocked }
+    enum SignOutResult: Equatable { case signedOut, stayedSignedIn, unconfirmed, blocked }
+
+    /// The marker, readable (possibly absent), or nil when it can't be read.
+    /// On the reinstall path a missing marker is written now (Audit M5a L4),
+    /// so a failed earlier write doesn't block sign-out or removal.
+    private func readableMarker(_ context: ModelContext, connectedPubkey: String?) -> AccountMarker?? {
+        guard case .success(let m) = Result(catching: { try marker(context) }) else { return nil }
+        if m == nil, let connectedPubkey {
+            do {
+                try setMarker(context, pubkey: connectedPubkey, state: .connected)
+                return .some(try marker(context))
+            } catch {
+                StorageLog.error("Recording the connected account failed", error: error)
+                return nil
+            }
+        }
+        return .some(m)
+    }
 
     /// Ordinary sign-out: delete this iPhone's key (confirmed), keep the
     /// journal with every entry's owner, never touch the iCloud backup.
     func signOut(context: ModelContext) -> SignOutResult {
         guard case .connected(let pubkey) = state,
-              (try? marker(context)) != nil, unsyncedCount(context: context) != nil
+              readableMarker(context, connectedPubkey: pubkey) != nil, unsyncedCount(context: context) != nil
         else { return .blocked }
-        guard vault.deletePrimaryVerified() else {
+        switch vault.deletePrimary() {
+        case .deleted: break
+        case .deleteFailed:
             StorageLog.error("Sign-out: removing the journal key failed")
             return .stayedSignedIn
+        case .unconfirmed:
+            StorageLog.error("Sign-out: couldn't confirm the journal key was removed")
+            refresh(context: context)
+            return .unconfirmed
         }
         do {
             try setMarker(context, pubkey: pubkey, state: .signedOut)
@@ -223,7 +260,16 @@ final class AccountModel {
         return .signedOut
     }
 
-    enum RemoveResult: Equatable { case removed, keyNotRemoved, journalNotRemoved, blocked }
+    enum RemoveResult: Equatable {
+        case removed
+        /// The key delete call failed; nothing has been deleted.
+        case keyDeleteFailed
+        /// The key delete succeeded but couldn't be confirmed; the journal
+        /// wasn't touched (Audit #13 L1).
+        case keyDeleteUnconfirmed
+        case journalNotRemoved
+        case blocked
+    }
 
     /// "Remove account and local data": delete the key (confirmed, abort on
     /// failure), then the journal store. The iCloud backup is a separate
@@ -233,11 +279,18 @@ final class AccountModel {
         case .connected, .signedOut, .keyMissing, .mismatch: break
         default: return .blocked
         }
-        guard (try? marker(context)) != nil, unsyncedCount(context: context) != nil else { return .blocked }
+        guard readableMarker(context, connectedPubkey: activeOwner) != nil, unsyncedCount(context: context) != nil
+        else { return .blocked }
         if vault.readPrimary() != .notFound {
-            guard vault.deletePrimaryVerified() else {
+            switch vault.deletePrimary() {
+            case .deleted: break
+            case .deleteFailed:
                 StorageLog.error("Remove account: removing the journal key failed")
-                return .keyNotRemoved
+                return .keyDeleteFailed
+            case .unconfirmed:
+                StorageLog.error("Remove account: couldn't confirm the journal key was removed")
+                refresh(context: context)
+                return .keyDeleteUnconfirmed
             }
         }
         guard store.removeAllData() else {

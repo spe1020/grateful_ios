@@ -58,7 +58,10 @@ struct RelayFetcher: Sendable {
             f.until = until
             f.limit = pageLimit
             let (events, outcome) = await fetchPage(f, on: connection, subscription: "gd\(page)")
-            guard outcome == .answered else { return (url, Array(seen.values), outcome) }
+            guard outcome == .answered else {
+                for e in events { seen[e.id] = e }
+                return (url, Array(seen.values), outcome)
+            }
             let new = events.filter { seen[$0.id] == nil }
             for e in new { seen[e.id] = e }
             // Stop when a page brings nothing new; otherwise continue below
@@ -81,17 +84,20 @@ struct RelayFetcher: Sendable {
             return ([], .failed("send"))
         }
         let timeout = pageTimeout
-        return await withTaskGroup(of: ([NostrEvent], RelayOutcome)?.self) { group in
+        // Events received before a timeout or close are kept: a relay that
+        // never sends EOSE is unresolved, but what it did send still counts
+        // as a remote version to merge (Audit test plan B7).
+        let collected = EventCollector()
+        return await withTaskGroup(of: RelayOutcome?.self) { group in
             group.addTask {
-                var events: [NostrEvent] = []
                 while true {
-                    guard let text = try? await connection.receive() else { return (events, .failed("closed")) }
+                    guard let text = try? await connection.receive() else { return .failed("closed") }
                     switch RelayMessage.parse(text) {
-                    case .event(let sub, let e) where sub == subscription: events.append(e)
+                    case .event(let sub, let e) where sub == subscription: collected.append(e)
                     case .eose(let sub) where sub == subscription:
                         try? await connection.send("[\"CLOSE\",\"\(subscription)\"]")
-                        return (events, .answered)
-                    case .closed(let sub, let reason) where sub == subscription: return (events, .closed(reason))
+                        return .answered
+                    case .closed(let sub, let reason) where sub == subscription: return .closed(reason)
                     default: continue
                     }
                 }
@@ -103,7 +109,15 @@ struct RelayFetcher: Sendable {
             let first = await group.next() ?? nil
             group.cancelAll()
             connection.close()
-            return first ?? ([], .timedOut)
+            return (collected.events, first ?? .timedOut)
         }
     }
+}
+
+/// Thread-safe accumulator for one page's events.
+final class EventCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [NostrEvent] = []
+    func append(_ e: NostrEvent) { lock.withLock { items.append(e) } }
+    var events: [NostrEvent] { lock.withLock { items } }
 }

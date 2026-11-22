@@ -155,6 +155,9 @@ struct RestoreView: View {
                     }
                 }
             }
+            if account.skippedBackups > 0 {
+                Text(AccountCopy.backupsSkipped(account.skippedBackups)).accessibilityIdentifier("restore.skipped")
+            }
             if let error { Text(error) }
         }
         .navigationTitle(AccountCopy.usedBefore)
@@ -350,6 +353,7 @@ struct SignOutView: View {
         switch account.signOut(context: context) {
         case .signedOut: onDone(.closed)
         case .stayedSignedIn, .blocked: onDone(.message(AccountCopy.signOutFailed))
+        case .unconfirmed: onDone(.message(AccountCopy.keyRemovalUnconfirmed))
         }
     }
 }
@@ -388,9 +392,12 @@ struct RemoveDataView: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(GDSpacing.medium)
         }
-        .confirmationDialog(AccountCopy.removeSecond(all ?? 0), isPresented: $confirmingSecond, titleVisibility: .visible) {
-            Button(AccountCopy.delete, role: .destructive) { remove(hasBackup: hasBackup, pubkey: pubkey) }
-                .accessibilityIdentifier("remove.step2")
+        .confirmationDialog(all.map(AccountCopy.removeSecond) ?? AccountCopy.removeNothingDone, isPresented: $confirmingSecond, titleVisibility: .visible) {
+            // Never "0 reflections" when the count can't be read (Audit M5a L2).
+            if all != nil {
+                Button(AccountCopy.delete, role: .destructive) { remove(hasBackup: hasBackup, pubkey: pubkey) }
+                    .accessibilityIdentifier("remove.step2")
+            }
             Button(AccountCopy.cancel, role: .cancel) {}
         }
         .confirmationDialog(AccountCopy.deleteBackupHeading, isPresented: $askingBackup, titleVisibility: .visible) {
@@ -422,8 +429,10 @@ struct RemoveDataView: View {
             } else {
                 onDone(.closed)
             }
-        case .keyNotRemoved, .blocked:
+        case .keyDeleteFailed, .blocked:
             onDone(.message(AccountCopy.removeNothingDone))
+        case .keyDeleteUnconfirmed:
+            onDone(.message(AccountCopy.keyRemovalUnconfirmed))
         case .journalNotRemoved:
             onDone(.message(AccountCopy.removeKeyOnly))
         }

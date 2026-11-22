@@ -9,6 +9,7 @@ struct GratefulDayApp: App {
     @State private var store = JournalStore()
     @State private var reminder = ReminderModel()
     @State private var account = AccountModel()
+    @State private var sync = SyncService()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -17,6 +18,7 @@ struct GratefulDayApp: App {
                 .environment(store)
                 .environment(reminder)
                 .environment(account)
+                .environment(sync)
                 // The account state depends on the journal marker, so it's
                 // recomputed whenever the store opens, closes or is replaced.
                 .onChange(of: store.container.map(ObjectIdentifier.init), initial: true) { _, _ in
@@ -44,5 +46,12 @@ struct GratefulDayApp: App {
         guard UIApplication.shared.applicationState != .background else { return }
         store.openIfPossible(protectedDataAvailable: UIApplication.shared.isProtectedDataAvailable)
         account.refresh(context: store.container?.mainContext)
+        readFromRelays()
+    }
+
+    /// M5b-1: read the connected account's journal (never publishes).
+    private func readFromRelays() {
+        guard let context = store.container?.mainContext, let key = account.connectedKey() else { return }
+        Task { await sync.run(owner: key.pubkey, secret: key.secret, context: context) }
     }
 }

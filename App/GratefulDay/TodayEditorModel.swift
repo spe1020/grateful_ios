@@ -19,7 +19,7 @@ import GratefulDayCore
 @MainActor
 @Observable
 final class TodayEditorModel {
-    enum LoadState: Equatable { case loading, ready, readFailed }
+    enum LoadState: Equatable { case loading, ready, readFailed, blocked }
 
     static let saveDelay: Duration = .milliseconds(500)
     /// NIP-44 v2's plaintext cap, applied to every entry (`DailyEntry`).
@@ -75,6 +75,14 @@ final class TodayEditorModel {
     /// typing is disabled until a retry succeeds.
     func load() {
         do {
+            if try repository.isBlocked(day.dateString) {
+                // The relay version can't be read: show this iPhone's copy,
+                // read-only, never empty and never written over (interop §0).
+                draft.text = try repository.entry(for: day.dateString)?.notesText ?? ""
+                hasUnsavedChanges = false
+                loadState = .blocked
+                return
+            }
             draft.text = try repository.text(for: day)
             hasUnsavedChanges = false
             let previous = try repository.latestReflectionDate(before: day.dateString)
@@ -133,6 +141,13 @@ final class TodayEditorModel {
         day = newDay
         loadState = .loading
         milestoneMessage = nil
+        load()
+    }
+
+    /// After a relay read imported changes: reload unless the person has
+    /// unsaved typing (which always wins locally; M5b-2 handles the rest).
+    func reloadIfClean() {
+        guard !hasUnsavedChanges else { return }
         load()
     }
 

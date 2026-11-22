@@ -37,6 +37,9 @@ struct RemoteImporter {
         var summary = Summary()
         for (dateString, remote) in days.sorted(by: { $0.key < $1.key }) {
             let row = try ownerRow(dateString)
+            // A copy older than the version this row already has (a lagging
+            // relay answered a partial read) is never taken or archived.
+            if let row, let base = row.remoteCreatedAt, let at = remote.createdAt, at < base { continue }
             switch remote {
             case .blocked(let eventId, let createdAt):
                 if let row {
@@ -146,5 +149,14 @@ struct RemoteImporter {
                                timeZoneID: zone.identifier, notesText: text, now: now(), ownerPubkey: owner)
         context.insert(row)
         return row
+    }
+}
+
+extension RemoteDay {
+    var createdAt: Int? {
+        switch self {
+        case .entry(_, _, _, let at, _), .blocked(_, let at): return at
+        case .deleted(let at): return at
+        }
     }
 }

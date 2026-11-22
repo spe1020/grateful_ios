@@ -5,7 +5,7 @@ import GratefulDayCore
 
 /// A scripted relay: answers REQs from a fixed event list, or misbehaves.
 final class FakeRelay: RelayConnection, @unchecked Sendable {
-    enum Behavior { case normal, silent, closeWithAuth, refuseConnect }
+    enum Behavior { case normal, silent, closeWithAuth, refuseConnect, eventsNoEose }
     let url: URL
     let behavior: Behavior
     var events: [NostrEvent]
@@ -29,7 +29,7 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
         switch behavior {
         case .silent, .refuseConnect: return
         case .closeWithAuth: push("[\"CLOSED\",\"\(sub)\",\"auth-required: sign in\"]"); return
-        case .normal: break
+        case .normal, .eventsNoEose: break
         }
         let kinds = f["kinds"] as? [Int] ?? []
         let until = f["until"] as? Int ?? Int.max
@@ -40,7 +40,7 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
             let data = try JSONEncoder().encode(e)
             push("[\"EVENT\",\"\(sub)\",\(String(decoding: data, as: UTF8.self))]")
         }
-        push("[\"EOSE\",\"\(sub)\"]")
+        if behavior != .eventsNoEose { push("[\"EOSE\",\"\(sub)\"]") }
     }
 
     private func push(_ s: String) {
@@ -119,6 +119,14 @@ final class RelayFetchTests: XCTestCase {
         let result = await fetcher([quiet], timeout: .milliseconds(200)).fetch(filter(), from: [quiet.url])
         XCTAssertEqual(result.outcomes[quiet.url], .timedOut)
         XCTAssertFalse(result.allAnswered([quiet.url]), "no answer is unknown, never empty")
+    }
+
+    func testEventsWithoutEoseAreKeptButRelayIsUnresolved() async throws {
+        let e = try entry("2026-11-13", "partial", at: 3_000)
+        let r = FakeRelay("slow", events: [e], behavior: .eventsNoEose)
+        let result = await fetcher([r], timeout: .milliseconds(300)).fetch(filter(), from: [r.url])
+        XCTAssertEqual(result.outcomes[r.url], .timedOut)
+        XCTAssertEqual(result.events.map(\.id), [e.id], "what it sent is still merged")
     }
 
     func testAuthClosedAndRefusedConnectAreUnknown() async {

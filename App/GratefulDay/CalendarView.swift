@@ -9,6 +9,7 @@ struct CalendarView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Binding var selection: AppTab
     @Environment(AccountModel.self) private var account
+    @Environment(SyncService.self) private var sync
     @State private var model: CalendarModel?
 
     var body: some View {
@@ -43,6 +44,7 @@ struct CalendarView: View {
         }
         // Today's edits and day changes show up when the tab is opened again.
         .onChange(of: selection) { _, tab in if tab == .calendar { model?.load() } }
+        .onChange(of: sync.status) { _, status in if case .done = status { model?.load() } }
         .onChange(of: scenePhase) { _, phase in if phase == .active { model?.load() } }
     }
 }
