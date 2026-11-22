@@ -130,11 +130,14 @@ final class WisdomAndReminderTests: XCTestCase {
         _ = try location.prepare()
         let d = JournalDay(containing: Date(timeIntervalSince1970: 1_795_300_000))
         do {
-            let old = Schema([JournalEntry.self, AcknowledgedMilestone.self])
+            // Written with the FROZEN M3b models, unversioned, as M3b shipped.
+            let old = Schema([JournalSchemaV2.JournalEntry.self, JournalSchemaV2.AcknowledgedMilestone.self])
             let c = try ModelContainer(for: old, configurations: ModelConfiguration(schema: old, url: location.storeURL, cloudKitDatabase: .none))
-            let r = JournalRepository(context: c.mainContext)
-            try r.save(text: "from M3b", for: d)
-            _ = try r.takeMilestone()
+            c.mainContext.insert(JournalSchemaV2.JournalEntry(
+                dateString: d.day.dateString, dayOfYear: d.day.dayOfYear, publishedAt: d.day.publishedAt,
+                timeZoneID: d.timeZone.identifier, notesText: "from M3b", now: .now))
+            c.mainContext.insert(JournalSchemaV2.AcknowledgedMilestone(total: 1, acknowledgedAt: .now))
+            try c.mainContext.save()
         }
         let store = JournalStore(location: location)
         store.openIfPossible(protectedDataAvailable: true)

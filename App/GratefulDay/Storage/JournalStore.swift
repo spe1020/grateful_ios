@@ -48,7 +48,7 @@ final class JournalStore {
         return nil
     }
 
-    static let schema = Schema(versionedSchema: JournalSchemaV3.self)
+    static let schema = Schema(versionedSchema: JournalSchemaV4.self)
 
     static func configuration(url: URL) -> ModelConfiguration {
         ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)

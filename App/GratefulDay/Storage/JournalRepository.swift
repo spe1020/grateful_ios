@@ -4,15 +4,32 @@ import GratefulDayCore
 
 /// Reads and writes journal entries. Every write is saved to disk before it
 /// returns: there is no batching, so a completed save survives force quit.
+///
+/// Ownership (design r3.1, Chief P17): `activeOwner` is the connected
+/// account's pubkey, or nil when no account is connected (guest or signed
+/// out). Rows the person sees and writes are guest rows plus the active
+/// owner's rows. Rows owned by any other account are read-only and are never
+/// edited, merged or counted here.
 @MainActor
 struct JournalRepository {
     let context: ModelContext
+    var activeOwner: String? = nil
 
-    /// The entry row for a local date (including a deletion tombstone), or nil.
+    private func row(owner: String?, dateString: String) throws -> JournalEntry? {
+        let key: String? = JournalEntry.key(owner: owner, dateString: dateString)
+        var d = FetchDescriptor<JournalEntry>(predicate: #Predicate { $0.entryKey == key })
+        d.fetchLimit = 1
+        return try context.fetch(d).first
+    }
+
+    /// The row the editor reads and writes for a date: the active owner's row
+    /// if there is one, otherwise the guest row (which becomes the owner's
+    /// when M5b publishes it). Includes deletion tombstones.
     func entry(for dateString: String) throws -> JournalEntry? {
-        var descriptor = FetchDescriptor<JournalEntry>(predicate: #Predicate { $0.dateString == dateString })
-        descriptor.fetchLimit = 1
-        return try context.fetch(descriptor).first
+        if let owner = activeOwner, let owned = try row(owner: owner, dateString: dateString) {
+            return owned
+        }
+        return try row(owner: nil, dateString: dateString)
     }
 
     /// The day's reflection text, or "" when there is none (or it was deleted).
@@ -21,10 +38,10 @@ struct JournalRepository {
         return entry.notesText
     }
 
-    /// Save the day's text, creating the entry if needed (one per date). The
-    /// text is stored in `EntryNotes` canonical form. A day's identity (date
-    /// tags and time zone) is fixed when its entry is first created. Writing
-    /// to a deleted day brings it back.
+    /// Save the day's text into `entry(for:)`, or a new guest row. The text
+    /// is stored in `EntryNotes` canonical form. A day's identity (date tags
+    /// and time zone) is fixed when its row is first created. Writing to a
+    /// deleted day brings it back. Rows of other accounts are never touched.
     @discardableResult
     func save(text: String, for day: JournalDay, now: Date = .now) throws -> JournalEntry {
         let notes = EntryNotes.normalize(text)
@@ -37,7 +54,7 @@ struct JournalRepository {
         } else {
             entry = JournalEntry(
                 dateString: day.day.dateString, dayOfYear: day.day.dayOfYear, publishedAt: day.day.publishedAt,
-                timeZoneID: day.timeZone.identifier, notesText: notes, now: now
+                timeZoneID: day.timeZone.identifier, notesText: notes, now: now, ownerPubkey: nil
             )
             context.insert(entry)
         }
@@ -46,7 +63,7 @@ struct JournalRepository {
     }
 
     /// Delete the day's reflection locally. The row stays as a tombstone
-    /// (`deletedAt`, keeping its `d` tag and any remote id) so M5 can apply
+    /// (`deletedAt`, keeping its `d` tag and any remote id) so M5b can apply
     /// web's NIP-09 deletion; the text itself is cleared now.
     func delete(_ day: JournalDay, now: Date = .now) throws {
         guard let entry = try entry(for: day.dateString), entry.deletedAt == nil else { return }
@@ -56,33 +73,53 @@ struct JournalRepository {
         try context.save()
     }
 
-    /// The most recent date before `dateString` that has a reflection.
+    /// Non-empty, non-deleted rows in a date range, any owner.
+    private func reflections(from start: String?, through end: String?) throws -> [JournalEntry] {
+        let lo = start ?? "", hi = end ?? "9999-12-31"
+        var d = FetchDescriptor<JournalEntry>(predicate: #Predicate {
+            $0.dateString >= lo && $0.dateString <= hi && $0.deletedAt == nil && $0.notesText != ""
+        })
+        d.propertiesToFetch = [\.dateString, \.ownerPubkey]
+        return try context.fetch(d)
+    }
+
+    /// Visible rows: guest plus active owner.
+    private func visibleReflections(from start: String? = nil, through end: String? = nil) throws -> [JournalEntry] {
+        try reflections(from: start, through: end).filter { $0.ownerPubkey == nil || $0.ownerPubkey == activeOwner }
+    }
+
+    /// The most recent date before `dateString` that has a visible reflection.
     func latestReflectionDate(before dateString: String) throws -> String? {
-        var descriptor = FetchDescriptor<JournalEntry>(
-            predicate: #Predicate { $0.dateString < dateString && $0.deletedAt == nil && $0.notesText != "" },
-            sortBy: [SortDescriptor(\.dateString, order: .reverse)]
-        )
-        descriptor.fetchLimit = 1
-        return try context.fetch(descriptor).first?.dateString
+        try visibleReflections().map(\.dateString).filter { $0 < dateString }.max()
     }
 
     // MARK: - Calendar and counts
 
-    /// Dates with a reflection between two `YYYY-MM-DD` dates, inclusive.
-    /// Fetches only the date column, so a month opens quickly.
+    /// Dates with a visible reflection between two `YYYY-MM-DD` dates, inclusive.
     func reflectionDates(from start: String, through end: String) throws -> Set<String> {
-        var descriptor = FetchDescriptor<JournalEntry>(
-            predicate: #Predicate { $0.dateString >= start && $0.dateString <= end && $0.deletedAt == nil && $0.notesText != "" }
-        )
-        descriptor.propertiesToFetch = [\.dateString]
-        return Set(try context.fetch(descriptor).map(\.dateString))
+        Set(try visibleReflections(from: start, through: end).map(\.dateString))
     }
 
-    /// Days with a reflection, in total.
+    /// Days with a visible reflection, in total (a guest row and the owner's
+    /// row on the same date count once).
     func totalReflectionCount() throws -> Int {
-        try context.fetchCount(FetchDescriptor<JournalEntry>(
-            predicate: #Predicate { $0.deletedAt == nil && $0.notesText != "" }
-        ))
+        Set(try visibleReflections().map(\.dateString)).count
+    }
+
+    // MARK: - Other accounts' rows (read-only, P17)
+
+    private func otherAccountReflections(from start: String? = nil, through end: String? = nil) throws -> [JournalEntry] {
+        try reflections(from: start, through: end).filter { $0.ownerPubkey != nil && $0.ownerPubkey != activeOwner }
+    }
+
+    /// Dates where only another (signed-out) account has a reflection.
+    func otherAccountDates(from start: String, through end: String) throws -> Set<String> {
+        Set(try otherAccountReflections(from: start, through: end).map(\.dateString))
+    }
+
+    /// Read-only text another account wrote on a date, or nil.
+    func otherAccountText(for dateString: String) throws -> String? {
+        try otherAccountReflections(from: dateString, through: dateString).first?.notesText
     }
 
     // MARK: - Milestones (totals only, shown once)
