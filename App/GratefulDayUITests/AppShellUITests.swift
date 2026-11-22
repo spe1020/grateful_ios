@@ -63,7 +63,7 @@ final class AppShellUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.textViews["today.editor"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["Unlock your iPhone to open your journal."].exists)
-        XCTAssertFalse(app.staticTexts["Your journal couldn't be opened just now."].exists)
+        XCTAssertFalse(app.staticTexts["Your journal couldn't be opened just now. Nothing has been deleted."].exists)
     }
 
     /// M3 1a: no visible label; the empty editor shows the placeholder and is
