@@ -105,6 +105,24 @@ final class ReminderModel {
         await turnOn(at: time)
     }
 
+    private var pendingChange: Task<Void, Never>?
+
+    /// From the time picker: changes run one at a time, and a newer pick
+    /// cancels an older one that hasn't started, so the reminder that ends
+    /// up scheduled is always the last time picked (Audit M4 L1).
+    @discardableResult
+    func requestChange(to time: Date) -> Task<Void, Never> {
+        let previous = pendingChange
+        previous?.cancel()
+        let task = Task { [weak self] in
+            await previous?.value
+            guard !Task.isCancelled, let self else { return }
+            await self.change(to: time)
+        }
+        pendingChange = task
+        return task
+    }
+
     func turnOff() async {
         await scheduler.cancelDaily()
         setOn(false)
@@ -137,7 +155,7 @@ struct ReminderView: View {
                 DatePicker("Time", selection: $picked, displayedComponents: .hourAndMinute)
                     .accessibilityIdentifier("reminder.time")
                     .onChange(of: picked) { _, newValue in
-                        if model.isOn { Task { await model.change(to: newValue) } }
+                        if model.isOn { model.requestChange(to: newValue) }
                     }
                 if model.isOn {
                     Button("Turn off reminder", role: .destructive) {

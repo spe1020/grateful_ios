@@ -8,6 +8,8 @@ struct CalendarDay: Identifiable, Equatable {
     let isToday: Bool
     let isFuture: Bool
     let hasReflection: Bool
+    /// Only another (not connected) account wrote this day (P17).
+    var otherAccountOnly: Bool = false
     var id: String { dateString }
 }
 
@@ -23,6 +25,8 @@ final class CalendarModel {
     private(set) var monthStart: Date
     private(set) var reflectionDates: Set<String> = []
     private(set) var totalCount = 0
+    private(set) var otherAccountDates: Set<String> = []
+    private(set) var otherAccountDayCount = 0
 
     private let repository: JournalRepository
     private let today: () -> JournalDay
@@ -87,6 +91,8 @@ final class CalendarModel {
         do {
             reflectionDates = try repository.reflectionDates(from: first, through: last)
             totalCount = try repository.totalReflectionCount()
+            otherAccountDates = try repository.otherAccountDates(from: first, through: last)
+            otherAccountDayCount = try repository.otherAccountDayCount()
             loadState = .ready
         } catch {
             loadState = .readFailed
@@ -103,8 +109,10 @@ final class CalendarModel {
         let days: [CalendarDay?] = (0..<count).map { offset in
             let date = calendar.date(byAdding: .day, value: offset, to: monthStart)!
             let ds = Self.dateString(date, calendar)
+            let mine = reflectionDates.contains(ds)
             return CalendarDay(dateString: ds, dayNumber: offset + 1, isToday: ds == todayString,
-                               isFuture: ds > todayString, hasReflection: reflectionDates.contains(ds))
+                               isFuture: ds > todayString, hasReflection: mine,
+                               otherAccountOnly: !mine && otherAccountDates.contains(ds))
         }
         return Array(repeating: nil, count: leading) + days
     }

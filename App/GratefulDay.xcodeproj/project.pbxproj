@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000301 /* GratefulDayCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000801 /* GratefulDayCore */; };
+		A10000000000000000000302 /* NostrCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000802 /* NostrCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,6 +59,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000301 /* GratefulDayCore in Frameworks */,
+				A10000000000000000000302 /* NostrCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -120,6 +122,7 @@
 			name = GratefulDay;
 			packageProductDependencies = (
 				A10000000000000000000801 /* GratefulDayCore */,
+				A10000000000000000000802 /* NostrCore */,
 			);
 			productName = GratefulDay;
 			productReference = A10000000000000000000201 /* GratefulDay.app */;
@@ -498,6 +501,10 @@
 		A10000000000000000000801 /* GratefulDayCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = GratefulDayCore;
+		};
+		A10000000000000000000802 /* NostrCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = NostrCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

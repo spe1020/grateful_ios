@@ -232,9 +232,13 @@ final class StoreSchemaAndClaimTests: XCTestCase {
         _ = try location.prepare()
         let day = JournalDay(containing: Date(timeIntervalSince1970: 1_795_300_000))
         do {
-            let old = Schema([JournalEntry.self])
+            // Written with the FROZEN M2 model, unversioned, as M2 shipped.
+            let old = Schema([JournalSchemaV1.JournalEntry.self])
             let container = try ModelContainer(for: old, configurations: ModelConfiguration(schema: old, url: location.storeURL, cloudKitDatabase: .none))
-            try JournalRepository(context: container.mainContext).save(text: "from M2", for: day)
+            container.mainContext.insert(JournalSchemaV1.JournalEntry(
+                dateString: day.day.dateString, dayOfYear: day.day.dayOfYear, publishedAt: day.day.publishedAt,
+                timeZoneID: day.timeZone.identifier, notesText: "from M2", now: .now))
+            try container.mainContext.save()
         }
         let store = JournalStore(location: location)
         store.openIfPossible(protectedDataAvailable: true)
