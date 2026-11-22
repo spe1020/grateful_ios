@@ -151,7 +151,14 @@ final class TodayEditorModel {
               let total = try? repository.totalReflectionCount(), total >= 2,
               let shown = try? repository.flag(JournalFlag.reminderOfferShown), !shown
         else { return }
-        try? repository.setFlag(JournalFlag.reminderOfferShown, now: now())
+        // Show it only once the "shown" fact is saved, so a failed save can't
+        // make it appear again later (Audit M4 L2).
+        do {
+            try repository.setFlag(JournalFlag.reminderOfferShown, now: now())
+        } catch {
+            StorageLog.error("Recording the reminder offer failed", error: error)
+            return
+        }
         showReminderOffer = true
     }
 

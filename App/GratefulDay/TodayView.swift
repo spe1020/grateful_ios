@@ -13,6 +13,9 @@ struct TodayView: View {
     @State private var day = JournalDay(containing: .now)
     @State private var editor: TodayEditorModel?
     @Environment(ReminderModel.self) private var reminder
+    @Environment(AccountModel.self) private var account
+    @State private var showingRestore = false
+    @State private var showingOtherAccount = false
     /// The day whose question "Reflect on this" pinned (kept for this session).
     @State private var pinnedDay: String?
     @State private var showingReminder = false
@@ -50,6 +53,23 @@ struct TodayView: View {
                             .accessibilitySortPriority(2)
                     }
 
+                    if let context = store.container?.mainContext {
+                        let repo = JournalRepository(context: context, activeOwner: account.activeOwner)
+                        if account.state == .guest, (try? repo.flag(JournalFlag.restorePending)) == true {
+                            Button(AccountCopy.stillLooking) { showingRestore = true }
+                                .font(GDFont.sectionLabel)
+                                .accessibilityIdentifier("today.stillLooking")
+                        }
+                        if let other = try? repo.otherAccountText(for: day.dateString) {
+                            Button(AccountCopy.alsoWroteToday) { showingOtherAccount = true }
+                                .font(GDFont.sectionLabel)
+                                .accessibilityIdentifier("today.otherAccount")
+                                .sheet(isPresented: $showingOtherAccount) {
+                                    NavigationStack { OtherAccountEntryView(dateString: day.dateString, text: other) }
+                                }
+                        }
+                    }
+
                     if let editor {
                         TodayEditorSection(model: editor)
                             .accessibilitySortPriority(1)
@@ -74,6 +94,11 @@ struct TodayView: View {
             .scrollDismissesKeyboard(.interactively)
             .background(GDColor.background.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showingRestore) {
+                NavigationStack {
+                    RestoreView(onImport: { showingRestore = false }, onDone: { _ in showingRestore = false })
+                }
+            }
             .sheet(isPresented: $showingReminder) {
                 NavigationStack {
                     ReminderView(model: reminder)
@@ -85,9 +110,16 @@ struct TodayView: View {
                 }
             }
         }
-        .onChange(of: store.container.map(ObjectIdentifier.init), initial: true) { _, _ in
-            if let container = store.container, editor == nil {
-                editor = TodayEditorModel(repository: JournalRepository(context: container.mainContext), day: day)
+        // Rebuilt when the store is replaced or the connected account changes
+        // (P17: the editor writes the active owner's row, otherwise guest).
+        .onChange(of: EditorIdentity(container: store.container.map(ObjectIdentifier.init), owner: account.activeOwner),
+                  initial: true) { _, identity in
+            editor?.flush()
+            if let container = store.container {
+                editor = TodayEditorModel(repository: JournalRepository(context: container.mainContext,
+                                                                        activeOwner: identity.owner), day: day)
+            } else {
+                editor = nil
             }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -259,11 +291,50 @@ private struct TodayEditorSection: View {
     }
 }
 
-#Preview("Light") { TodayView().environment(JournalStore()).environment(ReminderModel()) }
+#Preview("Light") { TodayView().environment(JournalStore()).environment(ReminderModel()).environment(AccountModel()) }
 #Preview("Dark, largest text") {
     TodayView()
         .environment(JournalStore())
         .environment(ReminderModel())
+        .environment(AccountModel())
         .preferredColorScheme(.dark)
         .dynamicTypeSize(.accessibility5)
+}
+
+/// What the editor depends on: the store and the connected account.
+struct EditorIdentity: Equatable {
+    let container: ObjectIdentifier?
+    let owner: String?
+}
+
+/// Another account's reflection, read-only, with its label (Prep, "Days
+/// from another account"). No edit or delete controls.
+struct OtherAccountEntryView: View {
+    let dateString: String
+    let text: String
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: GDSpacing.medium) {
+                Label(AccountCopy.fromAnotherAccount, systemImage: "person.crop.circle.badge.questionmark")
+                    .font(GDFont.sectionLabel)
+                    .foregroundStyle(GDColor.foreground)
+                    .accessibilityIdentifier("otherAccount.label")
+                Text(AccountCopy.fromAnotherAccountExplain)
+                    .font(.caption)
+                    .foregroundStyle(GDColor.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(Array(EntryNotes.split(text).enumerated()), id: \.offset) { _, note in
+                    Text(note)
+                        .font(GDFont.body)
+                        .foregroundStyle(GDColor.foreground)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(GDSpacing.medium)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(GDColor.background.ignoresSafeArea())
+        .navigationBarTitleDisplayMode(.inline)
+    }
 }

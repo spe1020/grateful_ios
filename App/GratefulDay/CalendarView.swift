@@ -8,6 +8,7 @@ struct CalendarView: View {
     @Environment(JournalStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
     @Binding var selection: AppTab
+    @Environment(AccountModel.self) private var account
     @State private var model: CalendarModel?
 
     var body: some View {
@@ -27,13 +28,17 @@ struct CalendarView: View {
             .navigationTitle("Calendar")
             .navigationDestination(for: String.self) { dateString in
                 if let container = store.container {
-                    DayDetailView(dateString: dateString, repository: JournalRepository(context: container.mainContext))
+                    DayDetailView(dateString: dateString,
+                                  repository: JournalRepository(context: container.mainContext, activeOwner: account.activeOwner))
                 }
             }
         }
-        .onChange(of: store.container.map(ObjectIdentifier.init), initial: true) { _, _ in
-            if let container = store.container, model == nil {
-                model = CalendarModel(repository: JournalRepository(context: container.mainContext))
+        .onChange(of: EditorIdentity(container: store.container.map(ObjectIdentifier.init), owner: account.activeOwner),
+                  initial: true) { _, identity in
+            if let container = store.container {
+                model = CalendarModel(repository: JournalRepository(context: container.mainContext, activeOwner: identity.owner))
+            } else {
+                model = nil
             }
         }
         // Today's edits and day changes show up when the tab is opened again.
@@ -90,6 +95,10 @@ private struct CalendarContent: View {
                         .accessibilityIdentifier("calendar.monthCount")
                     Text(CalendarModel.totalCountText(model.totalCount))
                         .accessibilityIdentifier("calendar.totalCount")
+                    if model.otherAccountDayCount > 0 {
+                        Text(AccountCopy.otherAccountKept(model.otherAccountDayCount))
+                            .accessibilityIdentifier("calendar.otherAccountKept")
+                    }
                 }
                 .font(GDFont.body)
                 // Body colour: muted text fails contrast at the largest sizes.
@@ -155,9 +164,15 @@ private struct DayCell: View {
             Text("\(day.dayNumber)")
                 .font(day.hasReflection ? GDFont.body.weight(.bold) : GDFont.body)
                 .foregroundStyle(GDColor.foreground)
-            Circle()
-                .fill(day.hasReflection ? GDColor.accent : Color.clear)
-                .frame(width: 6, height: 6)
+            ZStack {
+                Circle()
+                    .fill(day.hasReflection ? GDColor.accent : Color.clear)
+                // Another account's day: an outlined dot, not colour alone.
+                if day.otherAccountOnly {
+                    Circle().strokeBorder(GDColor.foreground, lineWidth: 1)
+                }
+            }
+            .frame(width: 6, height: 6)
         }
         .frame(maxWidth: .infinity, minHeight: 44)
         .overlay {
@@ -176,6 +191,7 @@ private struct DayCell: View {
         }
         if day.isToday { parts.append("Today") }
         if day.hasReflection { parts.append("Reflection written") }
+        if day.otherAccountOnly { parts.append("Reflection from another account") }
         if day.isFuture { parts.append("Unavailable") }
         return parts.joined(separator: ", ")
     }
@@ -186,6 +202,7 @@ struct DayDetailView: View {
     let dateString: String
     let repository: JournalRepository
     @State private var notes: [String]?
+    @State private var otherText: String?
     @State private var failed = false
 
     var body: some View {
@@ -212,9 +229,21 @@ struct DayDetailView: View {
                             .textSelection(.enabled)
                     }
                     .accessibilityIdentifier("day.notes")
-                    Label(PrivacyCopy.localOnlyLabel, systemImage: "iphone")
-                        .font(GDFont.sectionLabel)
-                        .foregroundStyle(GDColor.mutedForeground)
+                    if !notes.isEmpty {
+                        Label(PrivacyCopy.localOnlyLabel, systemImage: "iphone")
+                            .font(GDFont.sectionLabel)
+                            .foregroundStyle(GDColor.mutedForeground)
+                    }
+                    if let otherText {
+                        if notes.isEmpty {
+                            OtherAccountEntryView(dateString: dateString, text: otherText)
+                        } else {
+                            DisclosureGroup(AccountCopy.fromAnotherAccount) {
+                                OtherAccountEntryView(dateString: dateString, text: otherText)
+                            }
+                            .accessibilityIdentifier("day.otherAccountSection")
+                        }
+                    }
                 }
             }
             .padding(GDSpacing.medium)
@@ -229,6 +258,7 @@ struct DayDetailView: View {
         guard let day = TodayEditorModel.parse(dateString, timeZone: .current) else { return }
         do {
             notes = EntryNotes.split(try repository.text(for: day))
+            otherText = try repository.otherAccountText(for: dateString)
             failed = false
         } catch {
             failed = true
