@@ -117,6 +117,7 @@ final class AppShellUITests: XCTestCase {
 
     /// Audit M3a I2: the accessibility audit at the largest text size, on
     /// Today and on the Calendar.
+    @MainActor
     func testAccessibilityAuditAtLargestTextSize() throws {
         let app = XCUIApplication()
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
@@ -165,6 +166,7 @@ final class AppShellUITests: XCTestCase {
     /// translucent tab bar, and the audit's screenshot then measures text
     /// against the bar's blur. Only that contrast case is skipped; every
     /// other issue, and contrast anywhere else on screen, still fails.
+    @MainActor
     private static func isBehindTabBar(_ issue: XCUIAccessibilityAuditIssue, _ app: XCUIApplication) -> Bool {
         guard issue.auditType == .contrast, let element = issue.element else { return false }
         return element.frame.intersects(app.tabBars.firstMatch.frame)
