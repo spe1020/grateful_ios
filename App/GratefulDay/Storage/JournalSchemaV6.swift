@@ -73,6 +73,9 @@ enum JournalSchemaV6: VersionedSchema {
         static let reminderOfferShown = "reminderOfferShown"
         /// Prep F3: a restore found no backup yet; Today shows a quiet line.
         static let restorePending = "restorePending"
+        /// Spec A: the person saw the disclosure before the first publish.
+        /// Nothing is published until this is set (the sheet lands with M6).
+        static let publishDisclosureAccepted = "publishDisclosureAccepted"
     }
 
     /// Which account this install is connected to (non-secret; design §3).
@@ -150,9 +153,16 @@ enum JournalSchemaV6: VersionedSchema {
         var attempts: Int = 0
         var nextAttemptAt: Date?
         var queuedAt: Date
+        /// The entry's `updatedAt` this event was signed from: a later local
+        /// edit (a different value) needs a new event.
+        var entryUpdatedAt: Date?
+        /// Write relays that didn't answer the pre-send refetch: re-queried on
+        /// later passes for a version this row didn't base on (§0.1 item 3),
+        /// newline-separated.
+        var recheckRelaysText: String = ""
 
         init(event: NostrEvent, json: String, ownerPubkey: String, dateString: String,
-             baseEventId: String?, baseCreatedAt: Int?, now: Date) {
+             baseEventId: String?, baseCreatedAt: Int?, entryUpdatedAt: Date? = nil, now: Date) {
             self.eventId = event.id
             self.ownerPubkey = ownerPubkey
             self.dateString = dateString
@@ -161,12 +171,17 @@ enum JournalSchemaV6: VersionedSchema {
             self.eventCreatedAt = event.createdAt
             self.baseEventId = baseEventId
             self.baseCreatedAt = baseCreatedAt
+            self.entryUpdatedAt = entryUpdatedAt
             self.queuedAt = now
         }
 
         var ackedRelays: Set<String> {
             get { Set(ackedRelaysText.split(separator: "\n").map(String.init)) }
             set { ackedRelaysText = newValue.sorted().joined(separator: "\n") }
+        }
+        var recheckRelays: [URL] {
+            get { recheckRelaysText.split(separator: "\n").compactMap { URL(string: String($0)) } }
+            set { recheckRelaysText = newValue.map(\.absoluteString).sorted().joined(separator: "\n") }
         }
         var isLive: Bool { !superseded && !supersededByRemote }
     }

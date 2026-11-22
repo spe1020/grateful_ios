@@ -35,8 +35,13 @@ struct RemoteImporter {
     @discardableResult
     func apply(_ days: [String: RemoteDay], zone: TimeZone = .current) throws -> Summary {
         var summary = Summary()
+        let outbox = Outbox(context: context, owner: owner)
         for (dateString, remote) in days.sorted(by: { $0.key < $1.key }) {
             let row = try ownerRow(dateString)
+            // A version this device signed (M5b-2): its state comes from the
+            // outbox's acknowledgements, never from seeing it on one relay.
+            if case .entry(_, _, let eventId, _, _) = remote,
+               try outbox.ownEventIds(dateString: dateString).contains(eventId) { continue }
             // A copy older than the version this row already has (a lagging
             // relay answered a partial read) is never taken or archived.
             if let row, let base = row.remoteCreatedAt, let at = remote.createdAt, at < base { continue }
@@ -132,6 +137,20 @@ struct RemoteImporter {
         }
         try context.save()
         return summary
+    }
+
+    /// A relay holds a version a queued event of this device didn't base on
+    /// (r2.1 items 2 and 3): the day becomes a conflict. The local text
+    /// stays; a readable relay text is archived (once) and surfaced, so both
+    /// are kept for M6.
+    func conflict(dateString: String, remote: RemoteDay?) throws {
+        guard let row = try ownerRow(dateString) else { return }
+        row.syncStateRaw = SyncState.conflict.rawValue
+        if case .entry(let text, _, let eventId, _, _) = remote,
+           !hasArchive(dateString, eventId: eventId, reason: .remoteInConflict) {
+            archive(text, dateString: dateString, reason: .remoteInConflict, eventId: eventId, surfaced: true)
+        }
+        try context.save()
     }
 
     /// A row has pending local edits when it isn't in step with a relay

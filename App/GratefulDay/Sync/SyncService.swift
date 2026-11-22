@@ -3,8 +3,10 @@ import Observation
 import SwiftData
 import GratefulDayCore
 
-/// M5b-1: reads the connected account's journal from relays and imports it.
-/// **Read only: nothing is ever published from here.**
+/// Reads the connected account's journal from relays and imports it (M5b-1),
+/// then publishes local changes through `PublishPass` (M5b-2). Publishing
+/// happens only after spec A's disclosure was accepted, with a known,
+/// non-empty write set, and after a complete import.
 @MainActor
 @Observable
 final class SyncService {
@@ -14,14 +16,33 @@ final class SyncService {
     private(set) var relays: RelaySet?
     /// The settings read for M5b-2's writer (never written here).
     private(set) var settings: RemoteSettings = .unknown
+    /// Why the last pass published nothing, if it didn't.
+    enum PublishDeferral: Equatable {
+        /// Spec A's disclosure hasn't been accepted yet.
+        case notAllowedYet
+        /// The relay-list lookup didn't resolve (Audit A2): retried later.
+        case relayListUnknown
+        /// The user's own list names no write relay (Seth 3f1c5fd4): never
+        /// publish anywhere; Prep's copy explains.
+        case noWriteRelays
+    }
+    private(set) var publishDeferral: PublishDeferral?
+    private(set) var lastPublish: PublishPass.Summary?
 
     private let fetcher: RelayFetcher
+    private let publisher: RelayPublisher
     /// The read in progress, if any; cancelled when the app leaves the foreground.
     private var task: Task<Void, Never>?
     private var taskToken: UUID?
 
     init(transport: RelayTransport = WebSocketTransport()) {
         fetcher = RelayFetcher(transport: transport)
+        publisher = RelayPublisher(transport: transport)
+    }
+
+    init(fetcher: RelayFetcher, publisher: RelayPublisher) {
+        self.fetcher = fetcher
+        self.publisher = publisher
     }
 
     /// Start a read pass unless one is already running. A cancelled pass is
@@ -48,6 +69,8 @@ final class SyncService {
         stop()
         relays = nil
         settings = .unknown
+        publishDeferral = nil
+        lastPublish = nil
     }
 
     private func finished(_ token: UUID) {
@@ -63,7 +86,7 @@ final class SyncService {
     /// dropped. Writing through the old context would crash, and writing after
     /// sign-out would be a write the person didn't expect (Audit M3).
     func run(owner: String, secret: Data, context: ModelContext,
-             isCurrent: @MainActor () -> Bool = { true }) async {
+             isCurrent: @escaping @MainActor () -> Bool = { true }) async {
         guard status != .reading else { return }
         status = .reading
         let bootstrap = RelaySet.defaultRead
@@ -79,12 +102,35 @@ final class SyncService {
         relays = set
         settings = RemoteSettings.read(settingsResult.events, owner: owner, privateKey: secret)
         let days = RemoteJournal.days(from: journal.events, owner: owner, privateKey: secret)
+        let summary: RemoteImporter.Summary
         do {
-            let summary = try RemoteImporter(context: context, owner: owner).apply(days)
-            status = .done(summary)
+            summary = try RemoteImporter(context: context, owner: owner).apply(days)
         } catch {
             StorageLog.error("Importing from relays failed", error: error)
             status = .failed
+            return
+        }
+        await publish(owner: owner, secret: secret, context: context, set: set, isCurrent: isCurrent)
+        status = .done(summary)
+    }
+
+    /// Publish after a complete import. Never runs past an unknown or empty
+    /// write set, or before spec A's disclosure.
+    private func publish(owner: String, secret: Data, context: ModelContext, set: RelaySet,
+                         isCurrent: @escaping @MainActor () -> Bool) async {
+        lastPublish = nil
+        guard let write = set.write else { publishDeferral = .relayListUnknown; return }
+        guard !write.isEmpty else { publishDeferral = .noWriteRelays; return }
+        let allowed = (try? JournalRepository(context: context, activeOwner: owner)
+            .flag(JournalFlag.publishDisclosureAccepted)) ?? false
+        guard allowed else { publishDeferral = .notAllowedYet; return }
+        publishDeferral = nil
+        let pass = PublishPass(context: context, owner: owner, secret: secret, set: set,
+                               fetcher: fetcher, publisher: publisher, isCurrent: isCurrent)
+        do {
+            lastPublish = try await pass.run()
+        } catch {
+            StorageLog.error("Publishing failed", error: error)
         }
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import NostrCore
+import GratefulDayCore
 
 /// The local outbox of signed events (M5b plan r2 (b), r2.1). Rows are owned
 /// like entries: only the connected account's rows are read or sent.
@@ -11,13 +12,19 @@ struct Outbox {
 
     /// Queue a newly signed event for a day. Every older row for that day is
     /// marked superseded and never sent again, even if partly delivered.
+    /// One exception (Audit M3a I4): a new 36669 for a revived day leaves a
+    /// queued kind 5 live, because the deletion goes out first.
     @discardableResult
     func enqueue(_ event: NostrEvent, dateString: String, baseEventId: String?, baseCreatedAt: Int?,
-                 now: Date = .now) throws -> OutboxEvent {
-        for row in try rows(dateString: dateString) where row.isLive { row.superseded = true }
+                 entryUpdatedAt: Date? = nil, now: Date = .now) throws -> OutboxEvent {
+        for row in try rows(dateString: dateString) where row.isLive {
+            if event.kind == DailyEntry.kind && row.kind == 5 { continue }
+            row.superseded = true
+        }
         let data = try JSONEncoder().encode(event)
         let row = OutboxEvent(event: event, json: String(decoding: data, as: UTF8.self), ownerPubkey: owner,
-                              dateString: dateString, baseEventId: baseEventId, baseCreatedAt: baseCreatedAt, now: now)
+                              dateString: dateString, baseEventId: baseEventId, baseCreatedAt: baseCreatedAt,
+                              entryUpdatedAt: entryUpdatedAt, now: now)
         context.insert(row)
         try context.save()
         return row
@@ -64,6 +71,22 @@ struct Outbox {
         } else {
             row.nextAttemptAt = now.addingTimeInterval(DeliveryRules.backoff(afterAttempts: row.attempts))
         }
+        try context.save()
+    }
+
+    /// Live rows for this owner still waiting on a re-check of write relays
+    /// that didn't answer before their send.
+    func awaitingRecheck() throws -> [OutboxEvent] {
+        let owner = self.owner
+        return try context.fetch(FetchDescriptor<OutboxEvent>(predicate: #Predicate {
+            $0.ownerPubkey == owner && !$0.superseded && !$0.supersededByRemote && $0.recheckRelaysText != ""
+        }))
+    }
+
+    /// The refetch before a send didn't resolve: defer quietly, with backoff.
+    func deferRow(_ row: OutboxEvent, now: Date = .now) throws {
+        row.attempts += 1
+        row.nextAttemptAt = now.addingTimeInterval(DeliveryRules.backoff(afterAttempts: row.attempts))
         try context.save()
     }
 
