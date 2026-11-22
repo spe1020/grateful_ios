@@ -156,6 +156,41 @@ final class RelayFetchTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(quiet.closeCount, 1, "socket closed")
     }
 
+    /// Audit L1 / Chief P27: `until` is inclusive, so events cut off in the
+    /// middle of a second are still fetched; a page of only known ids from
+    /// one second steps past it instead of looping, and paging still reaches
+    /// older seconds and ends answered.
+    func testPageBoundaryInsideOneSecondIsNotSkippedAndStops() async throws {
+        let sameSecond = try (1...3).map { try entry(String(format: "2026-09-%02d", $0), "s\($0)", at: 5_000) }
+        let older = try entry("2026-08-01", "older", at: 4_000)
+        let relay = FakeRelay("edge", events: sameSecond + [older], pageCap: 2)
+        let result = await fetcher([relay]).fetch(filter(), from: [relay.url])
+        XCTAssertEqual(result.outcomes[relay.url], .unresolved("saturated second"), "a second it couldn't finish: never answered")
+        XCTAssertFalse(result.allAnswered([relay.url]))
+        XCTAssertTrue(result.events.contains { $0.id == older.id }, "older second still reached")
+
+        let cut = try (1...3).map { try entry(String(format: "2026-06-%02d", $0), "c\($0)", at: 7_000 + ($0 == 1 ? 1 : 0)) }
+        let mid = FakeRelay("mid", events: cut, pageCap: 2)
+        let r1 = await fetcher([mid]).fetch(filter(), from: [mid.url])
+        XCTAssertEqual(Set(r1.events.map(\.id)), Set(cut.map(\.id)), "a page cut mid-second loses nothing")
+        // Its last full page was all one second, so it might have held more
+        // there: conservatively unresolved, though nothing was missed here.
+        XCTAssertNotEqual(r1.outcomes[mid.url], .answered)
+
+        // The ordinary end of paging (the last second read in full) is answered.
+        let spread = try (1...3).map { try entry(String(format: "2026-05-%02d", $0), "p\($0)", at: 8_000 + $0) }
+        let done = FakeRelay("done", events: spread, pageCap: 2)
+        let r3 = await fetcher([done]).fetch(filter(), from: [done.url])
+        XCTAssertEqual(r3.outcomes[done.url], .answered)
+        XCTAssertEqual(Set(r3.events.map(\.id)), Set(spread.map(\.id)))
+
+        let full = try (1...4).map { try entry(String(format: "2026-07-%02d", $0), "f\($0)", at: 6_000) }
+        let stuck = FakeRelay("stuck", events: full, pageCap: 2)
+        let r2 = await fetcher([stuck]).fetch(filter(), from: [stuck.url])
+        XCTAssertEqual(r2.outcomes[stuck.url], .unresolved("saturated second"), "stops, never loops, never answered")
+        XCTAssertLessThan(stuck.requests.count, 10)
+    }
+
     func testTimeoutIsUnknownNotEmpty() async {
         let quiet = FakeRelay("quiet", behavior: .silent)
         let result = await fetcher([quiet], timeout: .milliseconds(200)).fetch(filter(), from: [quiet.url])

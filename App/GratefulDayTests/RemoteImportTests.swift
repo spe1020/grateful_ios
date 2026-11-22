@@ -135,6 +135,47 @@ final class RemoteImportTests: XCTestCase {
         XCTAssertEqual(try archive().map(\.notesText), ["edited on web"], "remote text kept aside")
     }
 
+    /// Audit M1: the same conflicting version on every pass is archived once.
+    func testConflictReimportedTwiceArchivesOnce() throws {
+        try insert("edited here", on: "2026-11-20", owner: owner, state: .localOnly, remoteId: "v1")
+        let days: [String: RemoteDay] = ["2026-11-20": entry("edited on web", id: "v2", at: 200)]
+        try importer().apply(days, zone: zone)
+        let second = try importer().apply(days, zone: zone)
+        XCTAssertEqual(try archive().count, 1)
+        XCTAssertEqual(second.conflicts, 0, "nothing new the second time")
+        let r = try XCTUnwrap(row(owner: owner, "2026-11-20"))
+        XCTAssertEqual(r.syncState, .conflict)
+        XCTAssertEqual(r.remoteEventID, "v1", "the base is kept for M5b-2's check")
+    }
+
+    /// Audit L2 / Chief P27: an unreadable version against pending edits is
+    /// a conflict, never clean; the local text is archived first, once.
+    func testBlockedVersionAgainstPendingEditsIsConflict() throws {
+        try insert("unsent edit", on: "2026-11-20", owner: owner, state: .localOnly, remoteId: "v1")
+        let days: [String: RemoteDay] = ["2026-11-20": .blocked(eventId: "v2", createdAt: 300)]
+        try importer().apply(days, zone: zone)
+        try importer().apply(days, zone: zone)
+        let r = try XCTUnwrap(row(owner: owner, "2026-11-20"))
+        XCTAssertEqual(r.syncState, .conflict)
+        XCTAssertEqual(r.notesText, "unsent edit")
+        XCTAssertEqual(r.remoteEventID, "v1", "base kept")
+        XCTAssertEqual(try archive().map(\.notesText), ["unsent edit"], "archived first, once")
+        XCTAssertEqual(try archive().first?.reason, .localInConflict)
+        let repo = JournalRepository(context: context, activeOwner: owner)
+        XCTAssertTrue(repo.showsLocalOnlyLabel("2026-11-20"), "never looks clean")
+        XCTAssertTrue(try repo.setAsideVersions().isEmpty, "not a replacement")
+    }
+
+    /// Audit M2: a blocked day with no local text is marked in the calendar.
+    func testBlockedDayWithoutLocalTextIsMarkedInCalendar() throws {
+        try importer().apply(["2026-11-20": .blocked(eventId: "v1", createdAt: 300)], zone: zone)
+        let repo = JournalRepository(context: context, activeOwner: owner)
+        XCTAssertTrue(try repo.reflectionDates(from: "2026-11-01", through: "2026-11-30").contains("2026-11-20"))
+        XCTAssertTrue(try repo.isBlocked("2026-11-20"), "the day view shows the blocked line")
+        XCTAssertTrue(try JournalRepository(context: context).reflectionDates(from: "2026-11-01", through: "2026-11-30").isEmpty,
+                      "guests don't see the account's blocked day")
+    }
+
     func testUndecryptableDayIsBlockedAndReadOnly() throws {
         try insert("local copy", on: "2026-11-20", owner: owner, state: .synced, remoteId: "v1")
         try importer().apply(["2026-11-20": .blocked(eventId: "v2", createdAt: 300)], zone: zone)

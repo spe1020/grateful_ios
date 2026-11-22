@@ -24,6 +24,9 @@ struct GratefulDayApp: App {
                 .onChange(of: store.container.map(ObjectIdentifier.init), initial: true) { _, _ in
                     account.refresh(context: store.container?.mainContext)
                 }
+                // A read pass belongs to one store and one account (Audit M3).
+                .onChange(of: store.container.map(ObjectIdentifier.init)) { _, _ in sync.reset() }
+                .onChange(of: account.activeOwner) { _, _ in sync.reset() }
                 // Never at App.init: open only once the scene is active and
                 // protected data is available (storage recommendation §1, S2).
                 .onChange(of: scenePhase, initial: true) { _, phase in
@@ -54,6 +57,9 @@ struct GratefulDayApp: App {
     /// M5b-1: read the connected account's journal (never publishes).
     private func readFromRelays() {
         guard let context = store.container?.mainContext, let key = account.connectedKey() else { return }
-        sync.start(owner: key.pubkey, secret: key.secret, context: context)
+        let store = store, account = account, owner = key.pubkey
+        sync.start(owner: owner, secret: key.secret, context: context) {
+            store.container?.mainContext === context && account.activeOwner == owner
+        }
     }
 }

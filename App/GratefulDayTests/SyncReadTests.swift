@@ -73,7 +73,7 @@ final class SyncReadTests: XCTestCase {
         let config = ModelConfiguration(schema: JournalStore.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         let container = try ModelContainer(for: JournalStore.schema, configurations: config)
         let sync = SyncService(transport: fakes(relays))
-        sync.start(owner: owner, secret: secret, context: container.mainContext)
+        sync.start(owner: owner, secret: secret, context: container.mainContext) { true }
         try await Task.sleep(for: .milliseconds(300))
         let started = Date()
         sync.stop()
@@ -81,6 +81,23 @@ final class SyncReadTests: XCTestCase {
         XCTAssertEqual(sync.status, .idle, "stopped, nothing imported")
         XCTAssertLessThan(Date().timeIntervalSince(started), 5, "didn't wait out page timeouts")
         for r in relays { XCTAssertGreaterThanOrEqual(r.closeCount, 1, "\(r.url) closed") }
+        XCTAssertTrue(try container.mainContext.fetch(FetchDescriptor<JournalEntry>()).isEmpty)
+    }
+
+    /// Audit M3: a pass whose account signed out, or whose store was
+    /// replaced, while it was reading writes nothing.
+    func testPassForAnAccountNoLongerConnectedWritesNothing() async throws {
+        let zone = TimeZone.current
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = zone
+        let day = DailyEntry.Day(containing: cal.date(from: DateComponents(year: 2026, month: 11, day: 20, hour: 12))!, timeZone: zone)
+        let event = try DailyEntry.privateTemplate(day: day, notes: ["from web"], privateKey: secret).signed(privateKey: secret, createdAt: 100)
+        let relays = RelaySet.defaultRead.map { FakeRelay($0.host!, events: [event]) }
+        let config = ModelConfiguration(schema: JournalStore.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+        let container = try ModelContainer(for: JournalStore.schema, configurations: config)
+        let sync = SyncService(transport: fakes(relays))
+        await sync.run(owner: owner, secret: secret, context: container.mainContext) { false }
+        XCTAssertEqual(sync.status, .idle)
+        XCTAssertNil(sync.relays, "nothing kept for the old account")
         XCTAssertTrue(try container.mainContext.fetch(FetchDescriptor<JournalEntry>()).isEmpty)
     }
 
@@ -176,6 +193,23 @@ final class StoreLifecycleTests: XCTestCase {
         for m in try ctx.fetch(FetchDescriptor<AccountMarker>()) { ctx.delete(m) }
         try ctx.save()
         XCTAssertEqual(account.signOut(context: ctx), .signedOut, "the missing marker is written, not a block")
+    }
+
+    /// Audit M3: a read pass that captured the context before "Remove account
+    /// and local data" sees the store changed and never touches the old
+    /// context (which would trap in SwiftData).
+    func testReadPassAfterRemovalNeverUsesTheStaleContext() async throws {
+        let store = JournalStore(location: location(), defaults: defaults)
+        store.openIfPossible(protectedDataAvailable: true)
+        let stale = store.container!.mainContext
+        let secret = try NostrKeys.generatePrivateKey()
+        let owner = KeyVault.pubkeyHex(for: secret)!
+        XCTAssertTrue(store.removeAllData())
+        let sync = SyncService(transport: FakeTransport(relays: [:]))
+        await sync.run(owner: owner, secret: secret, context: stale) {
+            store.container?.mainContext === stale
+        }
+        XCTAssertEqual(sync.status, .idle, "dropped, not crashed")
     }
 
     /// Prep F7/F8 [Try again]: an unconfirmed delete leaves the account

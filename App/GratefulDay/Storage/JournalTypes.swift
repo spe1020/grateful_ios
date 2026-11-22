@@ -27,4 +27,8 @@ enum EarlierVersionReason: String, Codable, Sendable {
     case replacedByRemote
     /// A relay version kept aside because the local row had pending edits.
     case remoteInConflict
+    /// Local text with pending edits, kept before a relay version that
+    /// couldn't be read marked the day as a conflict (Chief P27). Not shown
+    /// in Set aside; the row still holds the same text.
+    case localInConflict
 }

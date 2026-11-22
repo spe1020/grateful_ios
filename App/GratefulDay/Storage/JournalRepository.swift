@@ -109,6 +109,20 @@ struct JournalRepository {
     /// Dates with a visible reflection between two `YYYY-MM-DD` dates, inclusive.
     func reflectionDates(from start: String, through end: String) throws -> Set<String> {
         Set(try visibleReflections(from: start, through: end).map(\.dateString))
+            .union(try blockedDates(from: start, through: end))
+    }
+
+    /// The active account's days whose relay version can't be read. Marked in
+    /// the calendar even with no local text: never shown as empty (Audit M2,
+    /// spec §1.3, test plan B9).
+    func blockedDates(from start: String, through end: String) throws -> Set<String> {
+        guard let owner = activeOwner else { return [] }
+        let o: String? = owner, raw = SyncState.blocked.rawValue
+        let d = FetchDescriptor<JournalEntry>(predicate: #Predicate {
+            $0.dateString >= start && $0.dateString <= end && $0.deletedAt == nil
+                && $0.ownerPubkey == o && $0.syncStateRaw == raw
+        })
+        return Set(try context.fetch(d).map(\.dateString))
     }
 
     /// Days with a visible reflection, in total (a guest row and the owner's

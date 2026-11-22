@@ -42,7 +42,18 @@ struct RemoteImporter {
             if let row, let base = row.remoteCreatedAt, let at = remote.createdAt, at < base { continue }
             switch remote {
             case .blocked(let eventId, let createdAt):
-                if let row {
+                if let row, hasPendingEdits(row) {
+                    // Audit L2 / Chief P27: unsent local edits meeting a version
+                    // we can't read never look clean. The day becomes a conflict,
+                    // keeps its pending state and its base, and the local text is
+                    // archived first (once per remote version, Audit M1).
+                    if !hasArchive(dateString, eventId: eventId, reason: .localInConflict) {
+                        archive(row.notesText, dateString: dateString, reason: .localInConflict,
+                                eventId: eventId, surfaced: false)
+                        summary.conflicts += 1
+                    }
+                    row.syncStateRaw = SyncState.conflict.rawValue
+                } else if let row {
                     // Keep the local text; just mark the day unreadable remotely.
                     row.syncStateRaw = SyncState.blocked.rawValue
                     row.remoteEventID = eventId
@@ -92,8 +103,12 @@ struct RemoteImporter {
                         row.syncStateRaw = SyncState.synced.rawValue
                         continue
                     }
-                    archive(text, dateString: dateString, reason: .remoteInConflict, eventId: eventId, surfaced: true)
+                    // Audit M1: the row keeps its base (M5b-2's 5a check needs
+                    // it), so the same relay version is met again on every
+                    // pass. Archive it only once.
                     row.syncStateRaw = SyncState.conflict.rawValue
+                    if hasArchive(dateString, eventId: eventId, reason: .remoteInConflict) { continue }
+                    archive(text, dateString: dateString, reason: .remoteInConflict, eventId: eventId, surfaced: true)
                     summary.conflicts += 1
                     summary.surfaced += 1
                     continue
@@ -134,6 +149,15 @@ struct RemoteImporter {
     static func losesNotes(old: String, new: String) -> Bool {
         let incoming = Set(EntryNotes.split(new))
         return EntryNotes.split(old).contains { !incoming.contains($0) }
+    }
+
+    /// This account already archived this relay version for this day.
+    private func hasArchive(_ dateString: String, eventId: String, reason: EarlierVersionReason) -> Bool {
+        let o: String? = owner, raw = reason.rawValue, id: String? = eventId
+        let d = FetchDescriptor<EarlierVersion>(predicate: #Predicate {
+            $0.ownerPubkey == o && $0.dateString == dateString && $0.eventId == id && $0.reasonRaw == raw
+        })
+        return ((try? context.fetchCount(d)) ?? 0) > 0
     }
 
     private func archive(_ text: String, dateString: String, reason: EarlierVersionReason, eventId: String?, surfaced: Bool) {

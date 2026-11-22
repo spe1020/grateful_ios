@@ -164,7 +164,10 @@ final class AccountTests: XCTestCase {
 
     func testImportRejectsBadChecksum() throws {
         var nsec = try NostrKeys.nsec(try newSecret())
-        nsec.removeLast(); nsec.append(nsec.last == "q" ? "p" : "q")
+        // Change the last character to a different one. (Comparing against
+        // the new last character let the original one back in about 1 run in 32.)
+        let removed = nsec.removeLast()
+        nsec.append(removed == "q" ? "p" : "q")
         XCTAssertNil(KeyInput.parse(nsec))
         XCTAssertNil(KeyInput.parse("npub1notakey"))
         XCTAssertThrowsError(try account.importKey(nsec, context: context)) { XCTAssertEqual($0 as? AccountModel.ActionError, .invalidKey) }

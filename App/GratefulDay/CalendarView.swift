@@ -210,6 +210,7 @@ struct DayDetailView: View {
     @State private var failed = false
     /// This day's versions in Set aside (P22).
     @State private var earlierIds: Set<UUID> = []
+    @State private var blocked = false
     @State private var setAside: SetAsideFilter?
 
     var body: some View {
@@ -228,6 +229,13 @@ struct DayDetailView: View {
                         .foregroundStyle(GDColor.foreground)
                     Button("Try again") { load() }
                 } else if let notes {
+                    if blocked {
+                        Text(SyncCopy.blockedDay)
+                            .font(GDFont.sectionLabel)
+                            .foregroundStyle(GDColor.foreground)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("day.blocked")
+                    }
                     ForEach(Array(notes.enumerated()), id: \.offset) { _, note in
                         Text(note)
                             .font(GDFont.body)
@@ -275,6 +283,7 @@ struct DayDetailView: View {
         do {
             notes = EntryNotes.split(try repository.text(for: day))
             otherText = try repository.otherAccountText(for: dateString)
+            blocked = try repository.isBlocked(dateString)
             earlierIds = Set(try repository.setAsideVersions().filter { $0.dateString == dateString }.map(\.id))
             failed = false
         } catch {
