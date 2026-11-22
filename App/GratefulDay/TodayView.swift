@@ -253,7 +253,7 @@ private struct TodayEditorSection: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .alert("Couldn't delete just now.", isPresented: $deleteFailed) {
+        .alert("Couldn't delete just now. Your reflection is still here.", isPresented: $deleteFailed) {
             Button("OK", role: .cancel) {}
         }
     }

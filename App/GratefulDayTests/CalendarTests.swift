@@ -205,13 +205,13 @@ final class StoreSchemaAndClaimTests: XCTestCase {
     func testNoBackupClaimUntilTheFirstCheckSucceeds() {
         let store = JournalStore(location: StoreLocation(directory: root.appendingPathComponent("Store")))
         XCTAssertFalse(store.mayClaimBackupExclusion, "before any check: no claim")
-        XCTAssertEqual(PrivacyCopy.statement(mayClaimBackupExclusion: store.mayClaimBackupExclusion),
-                       PrivacyCopy.backupExclusionFailedStatement)
+        XCTAssertEqual(PrivacyCopy.statement(exclusionChecked: store.backupExclusionConfirmed, exclusionFailed: store.backupExclusionFailed),
+                       PrivacyCopy.neutralStatement, "before any check: the neutral statement, no claim either way")
         store.openIfPossible(protectedDataAvailable: false)
         XCTAssertFalse(store.mayClaimBackupExclusion, "still locked: no claim")
         store.openIfPossible(protectedDataAvailable: true)
         XCTAssertTrue(store.mayClaimBackupExclusion)
-        XCTAssertEqual(PrivacyCopy.statement(mayClaimBackupExclusion: store.mayClaimBackupExclusion),
+        XCTAssertEqual(PrivacyCopy.statement(exclusionChecked: store.backupExclusionConfirmed, exclusionFailed: store.backupExclusionFailed),
                        PrivacyCopy.preAccountStatement)
     }
 
