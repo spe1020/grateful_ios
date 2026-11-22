@@ -10,6 +10,8 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
     let behavior: Behavior
     var events: [NostrEvent]
     var pageCap: Int
+    /// Per-request page sizes (first REQ uses [0]); past the end, `pageCap`.
+    var pageCaps: [Int] = []
     private var outbox: [String] = []
     private var waiter: CheckedContinuation<String, Error>?
     private let lock = NSLock()
@@ -31,7 +33,7 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
         if lock.withLock({ isClosed }) { throw URLError(.cancelled) }
         guard let array = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any],
               array.first as? String == "REQ", let sub = array[1] as? String, let f = array[2] as? [String: Any] else { return }
-        lock.withLock { requests.append(f) }
+        let index = lock.withLock { requests.append(f); return requests.count - 1 }
         switch behavior {
         case .silent, .refuseConnect: return
         case .closeWithAuth: push("[\"CLOSED\",\"\(sub)\",\"auth-required: sign in\"]"); return
@@ -39,9 +41,11 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
         }
         let kinds = f["kinds"] as? [Int] ?? []
         let until = f["until"] as? Int ?? Int.max
-        let limit = min(f["limit"] as? Int ?? 1000, pageCap)
+        let cap = index < pageCaps.count ? pageCaps[index] : pageCap
+        let limit = min(f["limit"] as? Int ?? 1000, cap)
+        // Newest first; ties by id so a capped second is deterministic.
         let matching = events.filter { kinds.contains($0.kind) && $0.createdAt <= until }
-            .sorted { $0.createdAt > $1.createdAt }.prefix(limit)
+            .sorted { $0.createdAt != $1.createdAt ? $0.createdAt > $1.createdAt : $0.id < $1.id }.prefix(limit)
         for e in matching {
             let data = try JSONEncoder().encode(e)
             push("[\"EVENT\",\"\(sub)\",\(String(decoding: data, as: UTF8.self))]")
@@ -189,6 +193,33 @@ final class RelayFetchTests: XCTestCase {
         let r2 = await fetcher([stuck]).fetch(filter(), from: [stuck.url])
         XCTAssertEqual(r2.outcomes[stuck.url], .unresolved("saturated second"), "stops, never loops, never answered")
         XCTAssertLessThan(stuck.requests.count, 10)
+    }
+
+    /// Audit L3 / Chief P28: a relay with a page size of 1 caps every page,
+    /// so a second with two events loses one. The page after the step-back
+    /// holds an older event, which proves the page before it was capped.
+    func testPageSizeOneSecondWithMoreThanOneEventIsUnresolved() async throws {
+        let sameSecond = try (1...2).map { try entry(String(format: "2026-04-%02d", $0), "one\($0)", at: 5_000) }
+        let older = try entry("2026-03-01", "older", at: 4_000)
+        let relay = FakeRelay("one", events: sameSecond + [older], pageCap: 1)
+        let result = await fetcher([relay]).fetch(filter(), from: [relay.url])
+        XCTAssertEqual(result.outcomes[relay.url], .unresolved("saturated second"), "missed one of the second's two: never answered")
+        XCTAssertFalse(result.allAnswered([relay.url]))
+        XCTAssertTrue(result.events.contains { $0.id == older.id }, "older second still reached")
+    }
+
+    /// Audit L3 / Chief P28: a relay whose page shrinks (3, then 1) returns a
+    /// capped page smaller than its largest, which the page-size check misses.
+    func testShrinkingPageCappedSecondIsUnresolved() async throws {
+        let newer = try (1...2).map { try entry(String(format: "2026-02-%02d", $0), "n\($0)", at: 8_000 - $0 * 1_000) }
+        let sameSecond = try (1...2).map { try entry(String(format: "2026-01-%02d", $0), "s\($0)", at: 5_000) }
+        let older = try entry("2025-12-01", "older", at: 4_000)
+        let relay = FakeRelay("shrink", events: newer + sameSecond + [older], pageCap: 1)
+        relay.pageCaps = [3]
+        let result = await fetcher([relay]).fetch(filter(), from: [relay.url])
+        XCTAssertLessThan(result.events.count, 5, "the scenario really drops an event")
+        XCTAssertEqual(result.outcomes[relay.url], .unresolved("saturated second"))
+        XCTAssertFalse(result.allAnswered([relay.url]))
     }
 
     func testTimeoutIsUnknownNotEmpty() async {

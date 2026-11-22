@@ -72,6 +72,8 @@ struct RelayFetcher: Sendable {
         /// The largest page this relay returned: its page size, as far as we
         /// can tell (relays may return fewer than `limit`).
         var largestPage = 0
+        /// The last page held only known ids, and we stepped back a second.
+        var steppedBack = false
         while true {
             if Task.isCancelled { return (url, Array(seen.values), .failed("cancelled")) }
             page += 1
@@ -84,6 +86,16 @@ struct RelayFetcher: Sendable {
                 return (url, Array(seen.values), outcome)
             }
             largestPage = max(largestPage, events.count)
+            // After a step-back, any event is older than the second we left.
+            // The known-only page before would have included it had it not
+            // been capped, so that second may hold events we never saw:
+            // exact, whatever the relay's page size (Audit L3, Chief P28).
+            // What no time filter can detect: a capped *oldest* second on a
+            // relay whose page size is 1. Nothing older follows it, so this
+            // test can't fire, and a page of 1 can't show it was full
+            // (NIP-01 has no offset or cursor within a second).
+            if steppedBack && !events.isEmpty { saturated = true }
+            steppedBack = false
             let new = events.filter { seen[$0.id] == nil }
             for e in new { seen[e.id] = e }
             if new.isEmpty {
@@ -104,6 +116,7 @@ struct RelayFetcher: Sendable {
                     saturated = true
                 }
                 until = current - 1
+                steppedBack = true
             } else {
                 // `until` is inclusive (NIP-01): stay on the oldest second so
                 // events cut off mid-second are fetched too (Audit L1).
