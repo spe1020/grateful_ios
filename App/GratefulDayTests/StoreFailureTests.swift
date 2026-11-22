@@ -65,7 +65,7 @@ final class StoreFailureTests: XCTestCase {
         XCTAssertEqual(line, "Backup exclusion not applied [file: Store] [GratefulDayTests.StoreFailureTests.Injected 1]")
 
         // The statement no longer says reflections are left out of backups.
-        let shown = PrivacyCopy.statement(backupExclusionFailed: store.backupExclusionFailed)
+        let shown = PrivacyCopy.statement(mayClaimBackupExclusion: store.mayClaimBackupExclusion)
         XCTAssertEqual(shown, PrivacyCopy.backupExclusionFailedStatement)
         XCTAssertFalse(shown.contains("aren't included in iCloud or iPhone backups"))
 
@@ -73,7 +73,7 @@ final class StoreFailureTests: XCTestCase {
         fail.on = false
         store.openIfPossible(protectedDataAvailable: true)
         XCTAssertFalse(store.backupExclusionFailed)
-        XCTAssertEqual(PrivacyCopy.statement(backupExclusionFailed: store.backupExclusionFailed), PrivacyCopy.preAccountStatement)
+        XCTAssertEqual(PrivacyCopy.statement(mayClaimBackupExclusion: store.mayClaimBackupExclusion), PrivacyCopy.preAccountStatement)
         let values = try store.location.directory.resourceValues(forKeys: [.isExcludedFromBackupKey])
         XCTAssertEqual(values.isExcludedFromBackup, true)
     }

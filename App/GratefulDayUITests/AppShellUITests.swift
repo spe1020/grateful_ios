@@ -115,6 +115,61 @@ final class AppShellUITests: XCTestCase {
         try app.performAccessibilityAudit()
     }
 
+    /// Audit M3a I2: the accessibility audit at the largest text size, on
+    /// Today and on the Calendar.
+    func testAccessibilityAuditAtLargestTextSize() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        XCTAssertTrue(app.textViews["today.editor"].waitForExistence(timeout: 10))
+        try app.performAccessibilityAudit { issue in
+            Self.isBehindTabBar(issue, app)
+        }
+        app.tabBars.buttons["Calendar"].tap()
+        XCTAssertTrue(app.staticTexts["calendar.month"].waitForExistence(timeout: 10))
+        try app.performAccessibilityAudit { issue in
+            Self.isBehindTabBar(issue, app)
+        }
+    }
+
+    /// M3 criteria 5 and 6: writing today marks today in the calendar and
+    /// updates the counts; future days are unavailable.
+    func testCalendarMarksTodayAfterWriting() {
+        let app = XCUIApplication()
+        app.launch()
+        let editor = app.textViews["today.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        clear(app)
+        editor.tap()
+        editor.typeText("Calendar check")
+        app.buttons["today.keyboardDone"].tap()
+        Thread.sleep(forTimeInterval: 1)
+
+        app.tabBars.buttons["Calendar"].tap()
+        let todayCell = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS 'Today' AND label CONTAINS 'Reflection written'")).firstMatch
+        XCTAssertTrue(todayCell.waitForExistence(timeout: 10))
+        let monthCount = app.staticTexts["calendar.monthCount"]
+        XCTAssertTrue(monthCount.label.hasSuffix("this month"), monthCount.label)
+        XCTAssertNotEqual(monthCount.label, "No reflections this month")
+        let future = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Unavailable'")).firstMatch
+        if future.exists { XCTAssertFalse(future.isEnabled) }
+
+        // Tapping today goes to Today.
+        todayCell.tap()
+        XCTAssertTrue(app.tabBars.buttons["Today"].isSelected)
+        clear(app)
+    }
+
+    /// At the largest text sizes, scrolled content passes under the
+    /// translucent tab bar, and the audit's screenshot then measures text
+    /// against the bar's blur. Only that contrast case is skipped; every
+    /// other issue, and contrast anywhere else on screen, still fails.
+    private static func isBehindTabBar(_ issue: XCUIAccessibilityAuditIssue, _ app: XCUIApplication) -> Bool {
+        guard issue.auditType == .contrast, let element = issue.element else { return false }
+        return element.frame.intersects(app.tabBars.firstMatch.frame)
+    }
+
     /// Delete today's reflection if there is one, so tests start empty.
     private func clear(_ app: XCUIApplication) {
         let delete = app.buttons["today.delete"]

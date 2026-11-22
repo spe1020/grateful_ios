@@ -66,6 +66,43 @@ struct JournalRepository {
         return try context.fetch(descriptor).first?.dateString
     }
 
+    // MARK: - Calendar and counts
+
+    /// Dates with a reflection between two `YYYY-MM-DD` dates, inclusive.
+    /// Fetches only the date column, so a month opens quickly.
+    func reflectionDates(from start: String, through end: String) throws -> Set<String> {
+        var descriptor = FetchDescriptor<JournalEntry>(
+            predicate: #Predicate { $0.dateString >= start && $0.dateString <= end && $0.deletedAt == nil && $0.notesText != "" }
+        )
+        descriptor.propertiesToFetch = [\.dateString]
+        return Set(try context.fetch(descriptor).map(\.dateString))
+    }
+
+    /// Days with a reflection, in total.
+    func totalReflectionCount() throws -> Int {
+        try context.fetchCount(FetchDescriptor<JournalEntry>(
+            predicate: #Predicate { $0.deletedAt == nil && $0.notesText != "" }
+        ))
+    }
+
+    // MARK: - Milestones (totals only, shown once)
+
+    static let milestones = [1, 7, 30, 100, 365]
+
+    /// The highest milestone the total has reached that hasn't been shown
+    /// yet. Showing it acknowledges it and every lower one, so they never
+    /// stack or repeat.
+    func takeMilestone(now: Date = .now) throws -> Int? {
+        let total = try totalReflectionCount()
+        let shown = Set(try context.fetch(FetchDescriptor<AcknowledgedMilestone>()).map(\.total))
+        guard let reached = Self.milestones.last(where: { $0 <= total }), !shown.contains(reached) else { return nil }
+        for m in Self.milestones where m <= reached && !shown.contains(m) {
+            context.insert(AcknowledgedMilestone(total: m, acknowledgedAt: now))
+        }
+        try context.save()
+        return reached
+    }
+
     /// The day an entry belongs to, rebuilt from its stored identity.
     static func day(of entry: JournalEntry) -> DailyEntry.Day {
         let zone = TimeZone(identifier: entry.timeZoneID) ?? .current
