@@ -218,6 +218,12 @@ struct TodayView: View {
                 editor?.flush()
             }
         }
+        // Leaving Today: save what's typed, then publish it now rather than
+        // after the quiet time (Prep §2.2 R2).
+        .onDisappear {
+            editor?.flush()
+            sync.flushPendingSave()
+        }
         .onChange(of: sync.status) { _, status in
             if case .done = status { editor?.reloadIfClean() }
         }

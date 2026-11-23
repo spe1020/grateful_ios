@@ -10,6 +10,8 @@ enum DisclosureCopy {
     static func countLine(_ n: Int) -> String {
         n == 1 ? "1 reflection will be backed up to your account." : "\(n) reflections will be backed up to your account."
     }
+    /// Prep §2.3: after the count line, or in its place when the count is 0.
+    static let automatic = "After this, what you write is backed up to your account automatically."
     static let encrypted = "Your words are encrypted, so they can only be read with your key."
     static let visible = "The dates and times you save or edit entries can be seen by others."
     static let continueButton = "Continue"
@@ -33,7 +35,9 @@ enum DisclosureCopy {
                 bullets: ["Which days you wrote on.",
                           "When you saved each reflection, and each time you edited it.",
                           "Roughly how long each reflection is."],
-                after: ["They can't see what you wrote."]),
+                after: ["They can't see what you wrote.",
+                        // Prep §2.3, with save-triggered publishing.
+                        "Grateful Day backs up a reflection a little while after you stop writing, so one sitting usually shows as one edit."]),
         Section(title: "Public reflections",
                 lines: ["Anyone can read a reflection you make public. If you make it private later, earlier public versions may still be readable. Making it private protects what you save from now on."]),
         Section(title: "Your journal key",
@@ -100,6 +104,11 @@ struct PublishDisclosureSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("disclosure.count")
                 }
+                Text(DisclosureCopy.automatic)
+                    .font(GDFont.body)
+                    .foregroundStyle(GDColor.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("disclosure.automatic")
                 Text(DisclosureCopy.encrypted)
                     .font(GDFont.body)
                     .foregroundStyle(GDColor.foreground)

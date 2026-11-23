@@ -58,6 +58,11 @@ struct GratefulDayApp: App {
                 // Never at App.init: open only once the scene is active and
                 // protected data is available (storage recommendation §1, S2).
                 .onChange(of: scenePhase, initial: true) { _, phase in
+                    // Passes after a save, and retries, wait only in the
+                    // foreground. Becoming inactive starts a waiting one now.
+                    sync.isForeground = phase != .background
+                    sync.isActive = phase == .active
+                    if phase == .inactive { sync.flushPendingSave() }
                     if phase == .active { openStore() }
                     // No relay connection outlives the foreground (Chief P26).
                     if phase == .background { sync.stop() }
@@ -66,6 +71,12 @@ struct GratefulDayApp: App {
                     .publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)
                     .receive(on: RunLoop.main)) { _ in
                     openStore()
+                }
+                // A reflection saved or deleted while the app is open is
+                // published by a pass shortly after, once the disclosure was
+                // accepted (the pass keeps every publishing rule).
+                .onReceive(NotificationCenter.default.publisher(for: .journalEdited)) { _ in
+                    sync.localChangeSaved()
                 }
                 .onReceive(NotificationCenter.default
                     .publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)
@@ -77,6 +88,10 @@ struct GratefulDayApp: App {
 
     private func installRunner() {
         sync.runner = { [self] in readFromRelays() }
+        sync.publishAllowed = { [self] in
+            guard let context = store.container?.mainContext, let owner = account.activeOwner else { return false }
+            return (try? PublishDisclosure(context: context, owner: owner).isAccepted()) ?? false
+        }
     }
 
     private func openStore() {

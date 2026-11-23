@@ -10,6 +10,14 @@ import GratefulDayCore
 /// out). Rows the person sees and writes are guest rows plus the active
 /// owner's rows. Rows owned by any other account are read-only and are never
 /// edited, merged or counted here.
+extension Notification.Name {
+    /// Posted on the main actor after a reflection's text was saved with a
+    /// change, or a reflection was deleted, by the person on this iPhone.
+    /// Carries nothing: no text, date or account. The app uses it to start a
+    /// pass after a save (`SyncService.localChangeSaved`).
+    static let journalEdited = Notification.Name("GratefulDay.journalEdited")
+}
+
 enum RepositoryError: Error, Equatable {
     /// The day's relay version couldn't be read; its row is read-only.
     case dayIsBlocked
@@ -51,9 +59,11 @@ struct JournalRepository {
     func save(text: String, for day: JournalDay, now: Date = .now) throws -> JournalEntry {
         let notes = EntryNotes.normalize(text)
         let entry: JournalEntry
+        var changed = true
         if let existing = try self.entry(for: day.dateString) {
             guard existing.syncState != .blocked else { throw RepositoryError.dayIsBlocked }
-            if existing.notesText != notes || existing.deletedAt != nil {
+            changed = existing.notesText != notes || existing.deletedAt != nil
+            if changed {
                 existing.notesText = notes
                 existing.updatedAt = now
                 existing.deletedAt = nil
@@ -69,6 +79,7 @@ struct JournalRepository {
             context.insert(entry)
         }
         try context.save()
+        if changed { NotificationCenter.default.post(name: .journalEdited, object: nil) }
         return entry
     }
 
@@ -84,6 +95,7 @@ struct JournalRepository {
         // A delete after sync is pending until its kind 5 is delivered (M5b-2).
         if entry.syncState == .synced { entry.syncStateRaw = SyncState.localOnly.rawValue }
         try context.save()
+        NotificationCenter.default.post(name: .journalEdited, object: nil)
     }
 
     /// Non-empty, non-deleted rows in a date range, any owner.
