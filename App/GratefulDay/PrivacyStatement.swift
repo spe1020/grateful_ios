@@ -20,6 +20,9 @@ enum PrivacyCopy {
 
     /// The local status label for an entry (Chief P3). No synced state until M5.
     static let localOnlyLabel = "On this iPhone only"
+
+    /// Chief P42, Prep's ruling: shown with a day that's public on the account.
+    static let publicDayLabel = "This day is public. Anyone can read it."
 }
 
 /// Settings → Privacy.
@@ -53,6 +56,21 @@ struct PrivacyView: View {
         }
         .background(GDColor.background.ignoresSafeArea())
         .navigationTitle("Privacy")
+    }
+}
+
+/// Chief P42: the line shown with a public day, on Today and in the day view.
+/// Plain text, so VoiceOver reads it in order with the day.
+struct PublicDayLabel: View {
+    let identifier: String
+
+    var body: some View {
+        Label(PrivacyCopy.publicDayLabel, systemImage: "globe")
+            .font(GDFont.sectionLabel)
+            .foregroundStyle(GDColor.foreground)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(identifier)
     }
 }
 
