@@ -9,7 +9,8 @@ struct GratefulDayApp: App {
     @State private var store = JournalStore()
     @State private var reminder = ReminderModel()
     @State private var account = AccountModel()
-    @State private var sync = SyncService()
+    /// UI tests choose their relays by launch argument (Debug builds only).
+    @State private var sync = SyncService(transport: UITestRelays.transport(arguments: ProcessInfo.processInfo.arguments))
     /// Spec A sheet: shown when a pass is waiting on it. Not now hides it
     /// until the next launch; it publishes nothing and loses nothing.
     @State private var disclosureCount: Int?
