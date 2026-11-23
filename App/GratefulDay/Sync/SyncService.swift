@@ -298,9 +298,10 @@ final class SyncService {
         var pass = PublishPass(context: context, owner: owner, secret: secret, set: set,
                                fetcher: fetcher, publisher: publisher, isCurrent: isCurrent)
         pass.now = now
+        let passStarted = now()
         do {
             lastPublish = try await pass.run()
-            nextRetryAt = try Outbox(context: context, owner: owner).nextAttempt(write: write)
+            nextRetryAt = try Outbox(context: context, owner: owner).nextAttempt(write: write, after: passStarted)
         } catch {
             StorageLog.error("Publishing failed", error: error)
         }

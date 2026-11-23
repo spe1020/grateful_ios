@@ -272,6 +272,47 @@ final class SaveTriggeredSyncTests: XCTestCase {
         XCTAssertEqual(runs, 2)
     }
 
+    /// Audit #21 M1: a row that's due but whose day went into conflict, or
+    /// became unreadable, is skipped by the pass on purpose. It must not
+    /// schedule a retry, or the app re-reads the relays every 30 s for as
+    /// long as it stays open, sending nothing.
+    func testConflictDaySchedulesNoRetry() async throws {
+        try await assertSkippedDaySchedulesNoRetry(.conflict)
+    }
+
+    func testBlockedDaySchedulesNoRetry() async throws {
+        try await assertSkippedDaySchedulesNoRetry(.blocked)
+    }
+
+    private func assertSkippedDaySchedulesNoRetry(_ state: SyncState) async throws {
+        try acceptDisclosure()
+        let relays = defaults { r in
+            if r.url.host == "relay.primal.net" || r.url.host == "relay.damus.io" { r.okReply = .reject }
+        }
+        let sync = service(relays)
+        final class Clock { var value = Date() }
+        let clock = Clock()
+        sync.now = { clock.value }
+        sync.retrySleep = { seconds in
+            clock.value += seconds
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        try save("worth keeping", sync)
+        try await waitUntil { sync.lastPublish != nil && sync.retryPending }
+        XCTAssertEqual(runs, 1)
+        // Another device's edit puts the day in conflict (or it becomes
+        // unreadable) before the retry, which is now due.
+        let entry = try XCTUnwrap(repository.entry(for: day.dateString))
+        entry.syncStateRaw = state.rawValue
+        try context.save()
+        try await waitUntil { runs == 2 && sync.status != .reading }
+        try await settle(1)
+        XCTAssertEqual(runs, 2, "the due retry ran once, then nothing more")
+        XCTAssertFalse(sync.retryPending, "a skipped day schedules no retry")
+        XCTAssertNil(sync.nextRetryAt)
+        XCTAssertEqual(relays["nos.lol"]!.publishedFrames.count, 1, "nothing more was sent")
+    }
+
     /// The signal the app listens for: posted for a changed save or a
     /// delete, not for a save that changes nothing.
     func testRepositoryPostsJournalEditedOnlyForRealChanges() throws {
