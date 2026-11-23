@@ -170,16 +170,43 @@ struct JournalRepository {
     /// passed is recorded as shown, silently when it wasn't hit exactly
     /// (for example after a large import), so none is ever shown late or
     /// with the wrong number (Chief P12).
+    ///
+    /// Acknowledgements are kept per account (or for the guest journal), so
+    /// another account on this iPhone still gets its own line (P38, interop
+    /// §2.6). Records from before that count for every account: a line is
+    /// hidden rather than repeated.
     func takeMilestone(now: Date = .now) throws -> Int? {
         let total = try totalReflectionCount()
-        let shown = Set(try context.fetch(FetchDescriptor<AcknowledgedMilestone>()).map(\.total))
-        let passed = Self.milestones.filter { $0 <= total && !shown.contains($0) }
+        let passed = try unshownMilestones(upTo: total)
         guard !passed.isEmpty else { return nil }
-        for m in passed {
-            context.insert(AcknowledgedMilestone(total: m, acknowledgedAt: now))
+        try record(passed, now: now)
+        return passed.contains(total) ? total : nil
+    }
+
+    /// After an import: every milestone the account had already passed
+    /// elsewhere is marked as seen and never shown here (Prep §2.6 ruling 3).
+    /// Only crossing a total on this iPhone shows the line.
+    func markPassedMilestonesSeen(now: Date = .now) throws {
+        let passed = try unshownMilestones(upTo: try totalReflectionCount())
+        if !passed.isEmpty { try record(passed, now: now) }
+    }
+
+    private var milestoneScope: String { "milestoneShown|\(activeOwner ?? "guest")|" }
+
+    private func unshownMilestones(upTo total: Int) throws -> [Int] {
+        let legacy = Set(try context.fetch(FetchDescriptor<AcknowledgedMilestone>()).map(\.total))
+        let prefix = milestoneScope
+        let mine = Set(try context.fetch(FetchDescriptor<JournalFlag>(predicate: #Predicate { $0.name.starts(with: prefix) }))
+            .compactMap { Int($0.name.dropFirst(prefix.count)) })
+        return Self.milestones.filter { $0 <= total && !legacy.contains($0) && !mine.contains($0) }
+    }
+
+    private func record(_ milestones: [Int], now: Date) throws {
+        for m in milestones {
+            let name = milestoneScope + String(m)
+            if try !flag(name) { context.insert(JournalFlag(name: name, setAt: now)) }
         }
         try context.save()
-        return passed.contains(total) ? total : nil
     }
 
     // MARK: - One-time flags
@@ -245,6 +272,17 @@ struct JournalRepository {
         // No row yet, or unreadable: only here.
         guard let row = try? entry(for: dateString) else { return true }
         return row.syncState != .synced
+    }
+
+    /// Chief P42 (Prep's ruling): a day that's public on the account says so
+    /// wherever it's shown or edited, because editing it on iOS republishes it
+    /// in plaintext. Only the active account's day that came from relays as
+    /// public shows the line. Private days, guest days and days that exist
+    /// only on this iPhone show nothing new. Nothing about publishing changes.
+    func showsPublicLabel(_ dateString: String) -> Bool {
+        guard let owner = activeOwner, let row = try? entry(for: dateString) else { return false }
+        return row.ownerPubkey == owner && !row.isPrivate && row.remoteEventID != nil
+            && row.deletedAt == nil && !EntryNotes.split(row.notesText).isEmpty
     }
 
     /// What a day says about where it's saved (flows doc, "Incomplete sync").
