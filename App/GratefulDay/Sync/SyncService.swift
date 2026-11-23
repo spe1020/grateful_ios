@@ -120,6 +120,8 @@ final class SyncService {
         let summary: RemoteImporter.Summary
         do {
             summary = try RemoteImporter(context: context, owner: owner).apply(days)
+            // Milestones this account passed elsewhere are never shown here.
+            try JournalRepository(context: context, activeOwner: owner).markPassedMilestonesSeen()
         } catch {
             StorageLog.error("Importing from relays failed", error: error)
             status = .failed

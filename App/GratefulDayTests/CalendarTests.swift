@@ -132,8 +132,10 @@ final class CalendarTests: XCTestCase {
         }
         try container.mainContext.save()
         XCTAssertNil(try repo.takeMilestone(), "201 is not a milestone")
-        let shown = Set(try container.mainContext.fetch(FetchDescriptor<AcknowledgedMilestone>()).map(\.total))
-        XCTAssertEqual(shown, [1, 7, 30, 100], "passed milestones are recorded silently")
+        // Recorded per account (here the guest journal) since P38.
+        let shown = Set(try container.mainContext.fetch(FetchDescriptor<JournalFlag>()).map(\.name)
+            .filter { $0.hasPrefix("milestoneShown|guest|") })
+        XCTAssertEqual(shown, Set([1, 7, 30, 100].map { "milestoneShown|guest|\($0)" }), "passed milestones are recorded silently")
         // The editor shows no line either.
         let model = TodayEditorModel(repository: repo, day: day("2026-11-21"))
         model.edit("one more"); model.flush()

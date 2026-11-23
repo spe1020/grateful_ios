@@ -170,16 +170,43 @@ struct JournalRepository {
     /// passed is recorded as shown, silently when it wasn't hit exactly
     /// (for example after a large import), so none is ever shown late or
     /// with the wrong number (Chief P12).
+    ///
+    /// Acknowledgements are kept per account (or for the guest journal), so
+    /// another account on this iPhone still gets its own line (P38, interop
+    /// §2.6). Records from before that count for every account: a line is
+    /// hidden rather than repeated.
     func takeMilestone(now: Date = .now) throws -> Int? {
         let total = try totalReflectionCount()
-        let shown = Set(try context.fetch(FetchDescriptor<AcknowledgedMilestone>()).map(\.total))
-        let passed = Self.milestones.filter { $0 <= total && !shown.contains($0) }
+        let passed = try unshownMilestones(upTo: total)
         guard !passed.isEmpty else { return nil }
-        for m in passed {
-            context.insert(AcknowledgedMilestone(total: m, acknowledgedAt: now))
+        try record(passed, now: now)
+        return passed.contains(total) ? total : nil
+    }
+
+    /// After an import: every milestone the account had already passed
+    /// elsewhere is marked as seen and never shown here (Prep §2.6 ruling 3).
+    /// Only crossing a total on this iPhone shows the line.
+    func markPassedMilestonesSeen(now: Date = .now) throws {
+        let passed = try unshownMilestones(upTo: try totalReflectionCount())
+        if !passed.isEmpty { try record(passed, now: now) }
+    }
+
+    private var milestoneScope: String { "milestoneShown|\(activeOwner ?? "guest")|" }
+
+    private func unshownMilestones(upTo total: Int) throws -> [Int] {
+        let legacy = Set(try context.fetch(FetchDescriptor<AcknowledgedMilestone>()).map(\.total))
+        let prefix = milestoneScope
+        let mine = Set(try context.fetch(FetchDescriptor<JournalFlag>(predicate: #Predicate { $0.name.starts(with: prefix) }))
+            .compactMap { Int($0.name.dropFirst(prefix.count)) })
+        return Self.milestones.filter { $0 <= total && !legacy.contains($0) && !mine.contains($0) }
+    }
+
+    private func record(_ milestones: [Int], now: Date) throws {
+        for m in milestones {
+            let name = milestoneScope + String(m)
+            if try !flag(name) { context.insert(JournalFlag(name: name, setAt: now)) }
         }
         try context.save()
-        return passed.contains(total) ? total : nil
     }
 
     // MARK: - One-time flags
