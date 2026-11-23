@@ -173,6 +173,9 @@ final class RelayFetchTests: XCTestCase {
     /// timed out by the page timeout like a silent one. It used to hold the
     /// whole fetch until URLSession gave up (60 s), three times per pass.
     func testRelayThatNeverConnectsTimesOutWithThePage() async throws {
+        // Audit #20 L1: with the fix reverted this hangs; fail it instead
+        // (the scheme turns test time limits on; XCTest rounds up to 1 min).
+        executionTimeAllowance = 60
         let good = FakeRelay("a", events: [try entry("2026-11-20", "one", at: 1_000)])
         let hung = FakeRelay("b", behavior: .neverConnects)
         let started = Date()
@@ -189,6 +192,9 @@ final class RelayFetchTests: XCTestCase {
     /// connection (unknown, never answered) instead of waiting out the
     /// timeout again; a new pass dials it again.
     func testRelayThatNeverConnectsIsDialedOncePerPass() async throws {
+        // Audit #20 L1: with the fix reverted this hangs; fail it instead
+        // (the scheme turns test time limits on; XCTest rounds up to 1 min).
+        executionTimeAllowance = 60
         let good = FakeRelay("a", events: [try entry("2026-11-20", "one", at: 1_000)])
         let hung = FakeRelay("b", behavior: .neverConnects)
         let slow = FakeRelay("c", behavior: .silent)

@@ -52,6 +52,42 @@ final class SyncService {
     private var task: Task<Void, Never>?
     private var taskToken: UUID?
 
+    // MARK: Passes after a local save, and retries, in the foreground only
+
+    /// Set by the app: false once the scene is in the background. Nothing
+    /// below starts a pass, or keeps one waiting, outside the foreground.
+    var isForeground = false {
+        didSet { if !isForeground { cancelScheduled() } }
+    }
+    /// Set by the app: true only while the scene is active. A save that
+    /// lands while it isn't (the editor flushing as the app goes inactive)
+    /// starts its pass now, rather than after the quiet time (R2).
+    var isActive = false
+    /// Set by the app: whether spec A's disclosure was accepted for the
+    /// connected account. A save starts no pass before it, so saving never
+    /// leads to a relay read the person hasn't agreed to publish after.
+    var publishAllowed: (@MainActor () -> Bool)?
+    /// Quiet time after the last save before a pass starts, so one sitting
+    /// makes one publish, not one per local save (Prep §2.2 R2: about 30 s,
+    /// never under 15 s). Each publish is a public edit time and an earlier
+    /// version the key can read forever.
+    static let saveQuietTime: Duration = .seconds(30)
+    var saveDebounce: Duration = SyncService.saveQuietTime
+    /// The shortest wait before a foreground retry, whatever a row's backoff says.
+    var minimumRetryDelay: TimeInterval = 30
+    /// Clock for passes and retry scheduling, and the wait before a retry
+    /// (tests replace both).
+    var now: () -> Date = { .now }
+    var retrySleep: @MainActor (TimeInterval) async -> Void = { try? await Task.sleep(for: .seconds($0)) }
+    private var debounce: Task<Void, Never>?
+    private var retry: Task<Void, Never>?
+    var retryPending: Bool { retry != nil }
+    /// A save landed while a pass was running: run one more pass after it,
+    /// since the running pass may already have chosen what to publish.
+    private(set) var followUpRequested = false
+    /// When the last finished pass's earliest waiting row is due again.
+    private(set) var nextRetryAt: Date?
+
     init(transport: RelayTransport = WebSocketTransport()) {
         baseFetcher = RelayFetcher(transport: transport)
         basePublisher = RelayPublisher(transport: transport)
@@ -76,9 +112,85 @@ final class SyncService {
         }
     }
 
+    /// A reflection was saved or deleted on this iPhone. In the foreground,
+    /// with the disclosure accepted, a pass starts once saves have been quiet
+    /// for `saveDebounce`. If a pass is running then, another runs after it;
+    /// passes never overlap. The pass itself keeps every publishing rule.
+    func localChangeSaved() {
+        guard isForeground else { return }
+        debounce?.cancel()
+        debounce = nil
+        guard isActive else { requestPass(reason: "after a save, leaving the app"); return }
+        let delay = saveDebounce
+        debounce = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            self.debounce = nil
+            self.requestPass(reason: "after a save")
+        }
+    }
+
+    /// The person left Today, or the app is becoming inactive: start the
+    /// pass a pending save is waiting for now, rather than after the quiet
+    /// time (R2). Does nothing when no save is waiting.
+    func flushPendingSave() {
+        guard let pending = debounce else { return }
+        pending.cancel()
+        debounce = nil
+        requestPass(reason: "after a save, leaving the editor")
+    }
+
+    /// Start a pass now, or right after the one running.
+    private func requestPass(reason: String) {
+        guard isForeground, publishAllowed?() == true else { return }
+        if let task, !task.isCancelled {
+            followUpRequested = true
+            SyncLog.note("pass queued", reason)
+            return
+        }
+        SyncLog.note("pass requested", reason)
+        runner?()
+    }
+
+    /// Cancel any pass that's waiting to start (not the running one).
+    private func cancelScheduled() {
+        debounce?.cancel()
+        debounce = nil
+        retry?.cancel()
+        retry = nil
+        followUpRequested = false
+    }
+
+    /// After a pass: run the queued one, or wait for the earliest row that's
+    /// due again (its backoff, at least `minimumRetryDelay`).
+    private func scheduleAfterPass() {
+        guard isForeground else { return }
+        if followUpRequested {
+            followUpRequested = false
+            requestPass(reason: "saved during the last pass")
+            return
+        }
+        retry?.cancel()
+        retry = nil
+        guard let due = nextRetryAt else { return }
+        let wait = max(due.timeIntervalSince(now()), minimumRetryDelay)
+        let sleep = retrySleep
+        SyncLog.note("retry scheduled", "in \(Int(wait)) s")
+        retry = Task { [weak self] in
+            await sleep(wait)
+            guard !Task.isCancelled, let self else { return }
+            self.retry = nil
+            self.requestPass(reason: "retry")
+        }
+    }
+
     /// The app went to the background: stop reading and close every relay
-    /// connection. Nothing is imported from a stopped pass.
-    func stop() { task?.cancel() }
+    /// connection. Nothing is imported from a stopped pass, and no pass is
+    /// left waiting to start.
+    func stop() {
+        cancelScheduled()
+        task?.cancel()
+    }
 
     /// The account or the store changed (sign-out, removal, another account):
     /// stop, and forget what was read for the old account.
@@ -88,12 +200,15 @@ final class SyncService {
         settings = .unknown
         publishDeferral = nil
         lastPublish = nil
+        nextRetryAt = nil
     }
 
     private func finished(_ token: UUID) {
         guard taskToken == token else { return }
+        let cancelled = task?.isCancelled ?? true
         task = nil
         taskToken = nil
+        if !cancelled { scheduleAfterPass() }
     }
 
     /// One read pass. Unresolved relays are recorded, never read as empty.
@@ -106,6 +221,8 @@ final class SyncService {
              isCurrent: @escaping @MainActor () -> Bool = { true }) async {
         guard status != .reading else { return }
         status = .reading
+        // A pass that stops before publishing schedules no retry.
+        nextRetryAt = nil
         SyncLog.note("pass started")
         var fetcher = baseFetcher, publisher = basePublisher
         // One list for the pass: a relay that didn't open for a read isn't
@@ -163,6 +280,7 @@ final class SyncService {
                          fetcher: RelayFetcher, publisher: RelayPublisher,
                          isCurrent: @escaping @MainActor () -> Bool) async {
         lastPublish = nil
+        nextRetryAt = nil
         guard let write = set.write else { publishDeferral = .relayListUnknown; return }
         guard !write.isEmpty else { publishDeferral = .noWriteRelays; return }
         // Spec A: accepted for this account on this iPhone.
@@ -177,10 +295,13 @@ final class SyncService {
             StorageLog.error("Sorting this iPhone's days failed", error: error)
             return
         }
-        let pass = PublishPass(context: context, owner: owner, secret: secret, set: set,
+        var pass = PublishPass(context: context, owner: owner, secret: secret, set: set,
                                fetcher: fetcher, publisher: publisher, isCurrent: isCurrent)
+        pass.now = now
+        let passStarted = now()
         do {
             lastPublish = try await pass.run()
+            nextRetryAt = try Outbox(context: context, owner: owner).nextAttempt(write: write, after: passStarted)
         } catch {
             StorageLog.error("Publishing failed", error: error)
         }

@@ -60,6 +60,22 @@ struct Outbox {
         }
     }
 
+    /// The earliest time a live, unsynced row of this owner is due again
+    /// after a backoff, or nil when none is waiting on one. Only times after
+    /// `after` count: a row that was already due when the pass started and
+    /// is still due wasn't sent by that pass on purpose (its day is in
+    /// conflict or blocked, or it waits on a deletion), and retrying for it
+    /// would re-read the relays every 30 s and send nothing (Audit #21 M1).
+    /// Every row a pass did attempt has a backoff after `after`.
+    func nextAttempt(write: [URL]?, after: Date) throws -> Date? {
+        let owner = self.owner
+        let live = try context.fetch(FetchDescriptor<OutboxEvent>(predicate: #Predicate {
+            $0.ownerPubkey == owner && !$0.superseded && !$0.supersededByRemote
+        }))
+        return live.filter { DeliveryRules.state(acked: $0.ackedRelays, write: write) != .synced }
+            .compactMap(\.nextAttemptAt).filter { $0 > after }.min()
+    }
+
     /// Record one attempt's outcomes. Only `OK true` adds an acknowledgement.
     func record(_ outcomes: [URL: PublishOutcome], for row: OutboxEvent, write: [URL]?, now: Date = .now) throws {
         var acked = row.ackedRelays
