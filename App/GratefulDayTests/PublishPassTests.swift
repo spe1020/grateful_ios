@@ -440,11 +440,41 @@ final class PublishPassTests: XCTestCase {
         XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty })
     }
 
+    /// Spec A, once per account on this iPhone: another account's
+    /// acceptance (or the old account-less flag) never allows publishing.
+    func testDisclosureIsPerAccount() async throws {
+        try entry("2026-11-20", "mine")
+        let repo = JournalRepository(context: context, activeOwner: owner)
+        try repo.setFlag(JournalFlag.publishDisclosureAccepted)
+        try repo.setFlag(PublishDisclosure.flagName(owner: KeyVault.pubkeyHex(for: otherSecret)!))
+        let relays = RelaySet.defaultRead.map { FakeRelay($0.host!) }
+        let sync = service(relays)
+        await sync.run(owner: owner, secret: secret, context: context)
+        XCTAssertEqual(sync.publishDeferral, .notAllowedYet)
+        XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty })
+        let disclosure = PublishDisclosure(context: context, owner: owner)
+        XCTAssertFalse(try disclosure.isAccepted())
+        try disclosure.accept()
+        XCTAssertTrue(try disclosure.isAccepted())
+    }
+
+    /// The sheet's count line counts this account's unsaved reflections only.
+    func testDisclosureCountsUnsavedReflectionsOfThisAccount() throws {
+        try entry("2026-11-18", "one")
+        try entry("2026-11-19", "two")
+        try entry("2026-11-20", "saved", base: try remote("2026-11-20", "saved", at: 100))
+        try entry("2026-11-21", "")
+        try entry("2026-11-22", "other's", owner: KeyVault.pubkeyHex(for: otherSecret)!)
+        XCTAssertEqual(try PublishDisclosure(context: context, owner: owner).pendingCount(), 2)
+        XCTAssertEqual(DisclosureCopy.countLine(2), "2 reflections will be backed up to your account.")
+        XCTAssertEqual(DisclosureCopy.countLine(1), "1 reflection will be backed up to your account.")
+    }
+
     /// After the disclosure, a resolved "no list" publishes to the default
     /// write relays only, never to the read-only defaults.
     func testPublishesToDefaultWriteRelaysOnlyAfterDisclosure() async throws {
         try entry("2026-11-20", "told")
-        try JournalRepository(context: context, activeOwner: owner).setFlag(JournalFlag.publishDisclosureAccepted)
+        try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
         let relays = RelaySet.defaultRead.map { FakeRelay($0.host!) }
         let sync = service(relays)
         await sync.run(owner: owner, secret: secret, context: context)
@@ -458,7 +488,7 @@ final class PublishPassTests: XCTestCase {
     /// A2: the relay-list lookup didn't resolve: defer, never the defaults.
     func testUnresolvedRelayListDefersPublishing() async throws {
         try entry("2026-11-20", "unknown list")
-        try JournalRepository(context: context, activeOwner: owner).setFlag(JournalFlag.publishDisclosureAccepted)
+        try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
         let relays = RelaySet.defaultRead.enumerated().map { i, url in
             FakeRelay(url.host!, behavior: i == 0 ? .normal : .silent)
         }
@@ -472,7 +502,7 @@ final class PublishPassTests: XCTestCase {
     /// records why (Prep's copy explains it in slice 4).
     func testZeroWriteRelaysNeverPublishesAndExplains() async throws {
         try entry("2026-11-20", "read only list")
-        try JournalRepository(context: context, activeOwner: owner).setFlag(JournalFlag.publishDisclosureAccepted)
+        try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
         let list = try UnsignedEvent(kind: 10002, tags: [["r", "wss://relay.damus.io", "read"]], content: "")
             .signed(privateKey: secret, createdAt: 1)
         let relays = RelaySet.defaultRead.map { FakeRelay($0.host!, events: [list]) }
@@ -639,7 +669,7 @@ final class PublishPassTests: XCTestCase {
     func testSyncServiceDeleteThenReviveEndToEnd() async throws {
         let base = try remote("2026-11-20", "old", at: 100)
         try entry("2026-11-20", "old", base: base)
-        try JournalRepository(context: context, activeOwner: owner).setFlag(JournalFlag.publishDisclosureAccepted)
+        try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
         let relays = RelaySet.defaultRead.map { FakeRelay($0.host!, events: [base]) }
         let sync = service(relays)
         try delete("2026-11-20", at: Date.now)

@@ -10,6 +10,10 @@ struct GratefulDayApp: App {
     @State private var reminder = ReminderModel()
     @State private var account = AccountModel()
     @State private var sync = SyncService()
+    /// Spec A sheet: shown when a pass is waiting on it. Not now hides it
+    /// until the next launch; it publishes nothing and loses nothing.
+    @State private var disclosureCount: Int?
+    @State private var disclosureDeclined = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -26,7 +30,18 @@ struct GratefulDayApp: App {
                 }
                 // A read pass belongs to one store and one account (Audit M3).
                 .onChange(of: store.container.map(ObjectIdentifier.init)) { _, _ in sync.reset() }
-                .onChange(of: account.activeOwner) { _, _ in sync.reset() }
+                .onChange(of: account.activeOwner) { _, _ in sync.reset(); disclosureDeclined = false }
+                .onChange(of: sync.publishDeferral) { _, deferral in
+                    guard deferral == .notAllowedYet, !disclosureDeclined,
+                          let context = store.container?.mainContext, let owner = account.activeOwner else { return }
+                    disclosureCount = (try? PublishDisclosure(context: context, owner: owner).pendingCount()) ?? 0
+                }
+                .sheet(isPresented: Binding(get: { disclosureCount != nil }, set: { if !$0 { disclosureCount = nil } })) {
+                    PublishDisclosureSheet(count: disclosureCount ?? 0, onContinue: acceptDisclosure) {
+                        disclosureDeclined = true
+                        disclosureCount = nil
+                    }
+                }
                 // Never at App.init: open only once the scene is active and
                 // protected data is available (storage recommendation §1, S2).
                 .onChange(of: scenePhase, initial: true) { _, phase in
@@ -54,7 +69,21 @@ struct GratefulDayApp: App {
         readFromRelays()
     }
 
-    /// M5b-1: read the connected account's journal (never publishes).
+    private func acceptDisclosure() {
+        disclosureCount = nil
+        guard let context = store.container?.mainContext, let owner = account.activeOwner else { return }
+        do {
+            try PublishDisclosure(context: context, owner: owner).accept()
+        } catch {
+            StorageLog.error("Saving the privacy choice failed", error: error)
+            return
+        }
+        // Fetch first again, then publish (spec B).
+        readFromRelays()
+    }
+
+    /// Read the connected account's journal, then publish once spec A was
+    /// accepted (M5b).
     private func readFromRelays() {
         guard let context = store.container?.mainContext, let key = account.connectedKey() else { return }
         let store = store, account = account, owner = key.pubkey

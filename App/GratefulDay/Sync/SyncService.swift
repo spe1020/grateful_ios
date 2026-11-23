@@ -121,8 +121,8 @@ final class SyncService {
         lastPublish = nil
         guard let write = set.write else { publishDeferral = .relayListUnknown; return }
         guard !write.isEmpty else { publishDeferral = .noWriteRelays; return }
-        let allowed = (try? JournalRepository(context: context, activeOwner: owner)
-            .flag(JournalFlag.publishDisclosureAccepted)) ?? false
+        // Spec A: accepted for this account on this iPhone.
+        let allowed = (try? PublishDisclosure(context: context, owner: owner).isAccepted()) ?? false
         guard allowed else { publishDeferral = .notAllowedYet; return }
         publishDeferral = nil
         let pass = PublishPass(context: context, owner: owner, secret: secret, set: set,
