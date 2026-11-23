@@ -25,18 +25,31 @@ enum PrivacyCopy {
 /// Settings → Privacy.
 struct PrivacyView: View {
     @Environment(JournalStore.self) private var store
+    @Environment(AccountModel.self) private var account
 
     var body: some View {
         ScrollView {
-            // Never claims backup exclusion while it isn't in effect (P10).
-            Text(PrivacyCopy.statement(exclusionChecked: store.backupExclusionConfirmed,
-                                       exclusionFailed: store.backupExclusionFailed))
-                .font(GDFont.body)
-                .foregroundStyle(GDColor.foreground)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(GDSpacing.medium)
-                .accessibilityIdentifier("privacy.statement")
+            VStack(alignment: .leading, spacing: GDSpacing.medium) {
+                if account.activeOwner != nil {
+                    // Spec A acceptance 3: the sheet's two statements.
+                    Text(DisclosureCopy.encrypted)
+                        .accessibilityIdentifier("privacy.encrypted")
+                    Text(DisclosureCopy.visible)
+                } else {
+                    // Never claims backup exclusion while it isn't in effect (P10).
+                    Text(PrivacyCopy.statement(exclusionChecked: store.backupExclusionConfirmed,
+                                               exclusionFailed: store.backupExclusionFailed))
+                        .accessibilityIdentifier("privacy.statement")
+                }
+                NavigationLink(DisclosureCopy.learnMore) { DisclosureLearnMoreView() }
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("privacy.learnMore")
+            }
+            .font(GDFont.body)
+            .foregroundStyle(GDColor.foreground)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(GDSpacing.medium)
         }
         .background(GDColor.background.ignoresSafeArea())
         .navigationTitle("Privacy")
@@ -66,6 +79,37 @@ struct LocalOnlyFooter: View {
                             Button("Done") { showingStatement = false }
                         }
                     }
+            }
+        }
+    }
+}
+
+/// The Saving mark: an account day not yet saved to the account. One small
+/// symbol with a short label; tapping it shows why, with no buttons.
+struct SavingMark: View {
+    let detail: String
+    let identifier: String
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: GDSpacing.small) {
+            Button { expanded.toggle() } label: {
+                Label(SyncCopy.savingLabel, systemImage: "arrow.triangle.2.circlepath")
+                    .font(GDFont.sectionLabel)
+                    .foregroundStyle(GDColor.mutedForeground)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(SyncCopy.savingVoiceOver)
+            .accessibilityHint(expanded ? "" : detail)
+            .accessibilityIdentifier(identifier)
+            if expanded {
+                Text(detail)
+                    .font(GDFont.sectionLabel)
+                    .foregroundStyle(GDColor.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier(identifier + "Detail")
             }
         }
     }

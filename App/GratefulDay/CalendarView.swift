@@ -177,6 +177,15 @@ private struct DayCell: View {
             }
             .frame(width: 6, height: 6)
         }
+        .overlay(alignment: .topTrailing) {
+            // The Saving mark: a symbol, not colour alone.
+            if day.saving {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(GDColor.mutedForeground)
+                    .accessibilityHidden(true)
+            }
+        }
         .frame(maxWidth: .infinity, minHeight: 44)
         .overlay {
             if day.isToday {
@@ -194,6 +203,7 @@ private struct DayCell: View {
         }
         if day.isToday { parts.append("Today") }
         if day.hasReflection { parts.append("Reflection written") }
+        if day.saving { parts.append(SyncCopy.savingVoiceOver) }
         if day.otherAccountOnly { parts.append("Reflection from another account") }
         if day.isFuture { parts.append("Unavailable") }
         return parts.joined(separator: ", ")
@@ -203,6 +213,7 @@ private struct DayCell: View {
 /// A past day's reflection, read-only (web `isPast`): no edit control.
 struct DayDetailView: View {
     @Environment(JournalStore.self) private var store
+    @Environment(SyncService.self) private var sync
     let dateString: String
     let repository: JournalRepository
     @State private var notes: [String]?
@@ -213,7 +224,7 @@ struct DayDetailView: View {
     @State private var blocked = false
     @State private var setAside: SetAsideFilter?
     /// M6: the day has a choice to make (opens the conflict screen).
-    @State private var inConflict = false
+    @State private var dayLine: ConflictReview.DayLine?
     @State private var showingConflicts = false
 
     var body: some View {
@@ -247,9 +258,15 @@ struct DayDetailView: View {
                             .textSelection(.enabled)
                     }
                     .accessibilityIdentifier("day.notes")
-                    if inConflict {
+                    if let dayLine, !dayLine.opensScreen {
+                        Text(ConflictCopy.dayLine(dayLine))
+                            .font(GDFont.sectionLabel)
+                            .foregroundStyle(GDColor.foreground)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("day.tooLong")
+                    } else if let dayLine {
                         Button { showingConflicts = true } label: {
-                            Text(SyncCopy.alsoChangedElsewhere)
+                            Text(ConflictCopy.dayLine(dayLine))
                                 .font(GDFont.sectionLabel)
                                 .foregroundStyle(GDColor.foreground)
                                 .multilineTextAlignment(.leading)
@@ -264,10 +281,18 @@ struct DayDetailView: View {
                     }
                     // Chief P25: only an imported day still matching its relay
                     // version drops "On this iPhone only".
-                    if !notes.isEmpty, repository.showsLocalOnlyLabel(dateString) {
-                        Label(PrivacyCopy.localOnlyLabel, systemImage: "iphone")
-                            .font(GDFont.sectionLabel)
-                            .foregroundStyle(GDColor.mutedForeground)
+                    if !notes.isEmpty {
+                        switch repository.dayMark(dateString) {
+                        case .localOnly:
+                            Label(PrivacyCopy.localOnlyLabel, systemImage: "iphone")
+                                .font(GDFont.sectionLabel)
+                                .foregroundStyle(GDColor.mutedForeground)
+                        case .saving:
+                            SavingMark(detail: SyncService.savingDetail(sync, text: EntryNotes.join(notes)),
+                                       identifier: "day.saving")
+                        case .none:
+                            EmptyView()
+                        }
                     }
                     if let otherText {
                         if notes.isEmpty {
@@ -307,11 +332,13 @@ struct DayDetailView: View {
             blocked = try repository.isBlocked(dateString)
             if let owner = repository.activeOwner {
                 let days = try ConflictReview(context: repository.context, owner: owner).load()
-                inConflict = days.items.contains { $0.dateString == dateString }   // same rule as ConflictReview.listsDay
+                let today = JournalDay(containing: .now).day.dateString
+                dayLine = try ConflictReview(context: repository.context, owner: owner)
+                    .dayLine(dateString, isToday: today == dateString)
                 // §5: a blocked day with pending edits shows the blocked line too.
                 if days.blocked.contains(where: { $0.dateString == dateString }) { blocked = true }
             }
-            earlierIds = Set(try repository.setAsideVersions().filter { $0.dateString == dateString }.map(\.id))
+            earlierIds = Set(try repository.dayLineSetAsideVersions(dateString).map(\.id))
             failed = false
         } catch {
             failed = true

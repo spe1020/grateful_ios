@@ -440,11 +440,60 @@ final class PublishPassTests: XCTestCase {
         XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty })
     }
 
+    /// Spec A, once per account on this iPhone: another account's
+    /// acceptance (or the old account-less flag) never allows publishing.
+    func testDisclosureIsPerAccount() async throws {
+        try entry("2026-11-20", "mine")
+        let repo = JournalRepository(context: context, activeOwner: owner)
+        try repo.setFlag(JournalFlag.publishDisclosureAccepted)
+        try repo.setFlag(PublishDisclosure.flagName(owner: KeyVault.pubkeyHex(for: otherSecret)!))
+        let relays = RelaySet.defaultRead.map { FakeRelay($0.host!) }
+        let sync = service(relays)
+        await sync.run(owner: owner, secret: secret, context: context)
+        XCTAssertEqual(sync.publishDeferral, .notAllowedYet)
+        XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty })
+        let disclosure = PublishDisclosure(context: context, owner: owner)
+        XCTAssertFalse(try disclosure.isAccepted())
+        try disclosure.accept()
+        XCTAssertTrue(try disclosure.isAccepted())
+    }
+
+    /// Spec B: a day written before connecting is published after the
+    /// disclosure, sorted first (it was never sent as a guest row).
+    func testGuestDayIsPublishedAfterDisclosure() async throws {
+        let d = day("2026-11-20")
+        context.insert(JournalEntry(dateString: d.dateString, dayOfYear: d.dayOfYear, publishedAt: d.publishedAt,
+                                    timeZoneID: zone.identifier, notesText: "before connecting", now: t0, ownerPubkey: nil))
+        try context.save()
+        XCTAssertEqual(try PublishDisclosure(context: context, owner: owner).pendingCount(), 1)
+        let relays = RelaySet.defaultRead.map { FakeRelay($0.host!) }
+        let sync = service(relays)
+        await sync.run(owner: owner, secret: secret, context: context)
+        XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty }, "nothing before the disclosure")
+        try PublishDisclosure(context: context, owner: owner).accept()
+        await sync.run(owner: owner, secret: secret, context: context)
+        let sentDays = relays.flatMap(sent).filter { $0.kind == DailyEntry.kind }.compactMap { $0.tagValue("d") }
+        XCTAssertTrue(sentDays.contains("2026-11-20"))
+        XCTAssertEqual(try row("2026-11-20").ownerPubkey, owner)
+    }
+
+    /// The sheet's count line counts this account's unsaved reflections only.
+    func testDisclosureCountsUnsavedReflectionsOfThisAccount() throws {
+        try entry("2026-11-18", "one")
+        try entry("2026-11-19", "two")
+        try entry("2026-11-20", "saved", base: try remote("2026-11-20", "saved", at: 100))
+        try entry("2026-11-21", "")
+        try entry("2026-11-22", "other's", owner: KeyVault.pubkeyHex(for: otherSecret)!)
+        XCTAssertEqual(try PublishDisclosure(context: context, owner: owner).pendingCount(), 2)
+        XCTAssertEqual(DisclosureCopy.countLine(2), "2 reflections will be backed up to your account.")
+        XCTAssertEqual(DisclosureCopy.countLine(1), "1 reflection will be backed up to your account.")
+    }
+
     /// After the disclosure, a resolved "no list" publishes to the default
     /// write relays only, never to the read-only defaults.
     func testPublishesToDefaultWriteRelaysOnlyAfterDisclosure() async throws {
         try entry("2026-11-20", "told")
-        try JournalRepository(context: context, activeOwner: owner).setFlag(JournalFlag.publishDisclosureAccepted)
+        try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
         let relays = RelaySet.defaultRead.map { FakeRelay($0.host!) }
         let sync = service(relays)
         await sync.run(owner: owner, secret: secret, context: context)
@@ -458,7 +507,7 @@ final class PublishPassTests: XCTestCase {
     /// A2: the relay-list lookup didn't resolve: defer, never the defaults.
     func testUnresolvedRelayListDefersPublishing() async throws {
         try entry("2026-11-20", "unknown list")
-        try JournalRepository(context: context, activeOwner: owner).setFlag(JournalFlag.publishDisclosureAccepted)
+        try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
         let relays = RelaySet.defaultRead.enumerated().map { i, url in
             FakeRelay(url.host!, behavior: i == 0 ? .normal : .silent)
         }
@@ -472,7 +521,7 @@ final class PublishPassTests: XCTestCase {
     /// records why (Prep's copy explains it in slice 4).
     func testZeroWriteRelaysNeverPublishesAndExplains() async throws {
         try entry("2026-11-20", "read only list")
-        try JournalRepository(context: context, activeOwner: owner).setFlag(JournalFlag.publishDisclosureAccepted)
+        try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
         let list = try UnsignedEvent(kind: 10002, tags: [["r", "wss://relay.damus.io", "read"]], content: "")
             .signed(privateKey: secret, createdAt: 1)
         let relays = RelaySet.defaultRead.map { FakeRelay($0.host!, events: [list]) }
@@ -639,7 +688,7 @@ final class PublishPassTests: XCTestCase {
     func testSyncServiceDeleteThenReviveEndToEnd() async throws {
         let base = try remote("2026-11-20", "old", at: 100)
         try entry("2026-11-20", "old", base: base)
-        try JournalRepository(context: context, activeOwner: owner).setFlag(JournalFlag.publishDisclosureAccepted)
+        try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
         let relays = RelaySet.defaultRead.map { FakeRelay($0.host!, events: [base]) }
         let sync = service(relays)
         try delete("2026-11-20", at: Date.now)
@@ -658,5 +707,33 @@ final class PublishPassTests: XCTestCase {
         await sync.run(owner: owner, secret: secret, context: context)
         XCTAssertEqual(try row("2026-11-20").syncState, .synced, "a later read leaves it alone")
         XCTAssertEqual(try row("2026-11-20").notesText, "new")
+    }
+
+    // MARK: - Audit #16 L1
+
+    /// L1: the pre-send refetch finds another device's kind 5 on its own
+    /// (no 36669 beside it). The importer is told the account deleted the
+    /// day, so an open copy of the account's earlier text is retired and
+    /// never offered as "Your account" (Prep §10).
+    func testPreSendLoneKind5IsADeletionNotNothing() async throws {
+        let base = try remote("2026-11-20", "start", at: 100)
+        try entry("2026-11-20", "start", base: base)
+        try edit("2026-11-20", "mine", at: t0)
+        context.insert(EarlierVersion(ownerPubkey: owner, dateString: "2026-11-20", notesText: "account text",
+                                      reason: .remoteInConflict, eventId: String(repeating: "e", count: 64),
+                                      surfaced: true, eventCreatedAt: 300, now: t0))
+        try context.save()
+        let k5 = try kind5("2026-11-20", target: base.id, at: 900)
+        let w = relays("a", "b", events: [k5])
+        let s = try await pass(w, write: w.map(\.url)).run()
+        XCTAssertEqual(s?.conflicts, 1)
+        XCTAssertTrue(w.allSatisfy { $0.publishedFrames.isEmpty })
+        XCTAssertEqual(try row("2026-11-20").syncState, .conflict)
+        XCTAssertEqual(try row("2026-11-20").notesText, "mine")
+        let review = ConflictReview(context: context, owner: owner)
+        XCTAssertEqual(try review.load().items.map(\.kind), [.deletedFromAccount], "§10: a §7 row")
+        XCTAssertEqual(try review.load().items.map(\.accountText), [""], "the deleted account text is never offered")
+        try review.apply(["2026-11-20": .keepAccount])
+        XCTAssertEqual(try row("2026-11-20").syncState, .conflict, "never marked saved with deleted text")
     }
 }

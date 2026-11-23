@@ -204,7 +204,12 @@ struct PublishPass {
     private func stop(_ row: OutboxEvent, remote event: NostrEvent, fetched: FetchResult) throws {
         try outbox.stopForRemote(row)
         row.recheckRelays = []
-        let remote = RemoteJournal.days(from: [event], owner: owner, privateKey: secret)[row.dateString]
+        // A lone kind 5 has no 36669 beside it to cover, so RemoteJournal
+        // would return nothing for it. It is the account deleting the day
+        // (Audit #16 L1): the importer must see `.deleted`.
+        let remote: RemoteDay? = event.kind == 5
+            ? .deleted(at: event.createdAt, by: [event.id])
+            : RemoteJournal.days(from: [event], owner: owner, privateKey: secret)[row.dateString]
         try importer.conflict(dateString: row.dateString, remote: remote)
     }
 

@@ -220,7 +220,13 @@ struct JournalRepository {
         let all = try context.fetch(FetchDescriptor<EarlierVersion>(
             predicate: #Predicate { $0.surfaced },
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))
-        return all.filter { $0.ownerPubkey == activeOwner && ($0.reason == .replacedByRemote || $0.reason == .notKept) }
+        return all.filter { $0.ownerPubkey == activeOwner && $0.reason.isSetAside }
+    }
+
+    /// The day view's "An earlier version… is in Set aside" line: §12 items
+    /// are in Set aside only, never on the day (Prep).
+    func dayLineSetAsideVersions(_ dateString: String) throws -> [EarlierVersion] {
+        try setAsideVersions().filter { $0.dateString == dateString && $0.reason != .writtenBeforeConnectingDeleted }
     }
 
     /// Hide the Today line for these versions. Nothing is deleted.
@@ -239,6 +245,73 @@ struct JournalRepository {
         // No row yet, or unreadable: only here.
         guard let row = try? entry(for: dateString) else { return true }
         return row.syncState != .synced
+    }
+
+    /// What a day says about where it's saved (flows doc, "Incomplete sync").
+    enum DayMark: Equatable {
+        /// Guest: "On this iPhone only".
+        case localOnly
+        /// An account day not yet acknowledged by 2 write relays.
+        case saving
+        /// Saved to the account, or nothing to save.
+        case none
+    }
+
+    /// Prep's "Which days get the mark": only days the app is actually
+    /// sending. Before spec A is accepted for this account nothing is being
+    /// tried, so unsaved days stay "On this iPhone only". Days waiting on a
+    /// choice, blocked or too long to save show their own day line instead.
+    func dayMark(_ dateString: String) -> DayMark {
+        guard activeOwner != nil else { return .localOnly }
+        let found: JournalEntry?
+        do { found = try entry(for: dateString) } catch { return .saving }
+        guard let row = found else { return .none }
+        return mark(for: row)
+    }
+
+    private var publishingAccepted: Bool {
+        guard let owner = activeOwner else { return false }
+        return (try? flag(PublishDisclosure.flagName(owner: owner))) ?? false
+    }
+
+    private func mark(for row: JournalEntry, accepted: Bool? = nil) -> DayMark {
+        guard row.deletedAt == nil, !EntryNotes.split(row.notesText).isEmpty else { return .none }
+        if row.ownerPubkey != nil, row.syncState == .synced { return .none }
+        guard accepted ?? publishingAccepted else { return .localOnly }
+        // A guest row is sorted and sent by the next pass.
+        if row.ownerPubkey == nil { return .saving }
+        switch row.syncState {
+        case .conflict, .blocked, .synced: return .none
+        case .localOnly:
+            return ConflictReview.isTooLong(EntryNotes.join(EntryNotes.split(row.notesText))) ? .none : .saving
+        }
+    }
+
+    /// Rows that show the Saving mark, one per day (the account's row wins).
+    private func savingRows(from start: String? = nil, through end: String? = nil) throws -> [JournalEntry] {
+        guard let owner = activeOwner else { return [] }
+        let accepted = publishingAccepted
+        let lo = start ?? "", hi = end ?? "9999"
+        // A simple predicate: Xcode 26 can't type-check a longer one in time.
+        let inRange = try context.fetch(FetchDescriptor<JournalEntry>(predicate: #Predicate {
+            $0.dateString >= lo && $0.dateString <= hi
+        }))
+        let rows = inRange.filter { $0.ownerPubkey == owner || $0.ownerPubkey == nil }
+        let mine = Set(rows.filter { $0.ownerPubkey == owner }.map { (r: JournalEntry) in r.dateString })
+        return rows.filter { (r: JournalEntry) in
+            (r.ownerPubkey != nil || !mine.contains(r.dateString)) && mark(for: r, accepted: accepted) == .saving
+        }
+    }
+
+    /// The account's days in `start...end` showing the Saving mark.
+    func savingDates(from start: String, through end: String) throws -> Set<String> {
+        Set(try savingRows(from: start, through: end).map { (r: JournalEntry) in r.dateString })
+    }
+
+    /// Days showing the Saving mark for `days` days or more (the Settings line).
+    func longSavingCount(now: Date = .now, days: Int = 7) throws -> Int {
+        let cutoff = now.addingTimeInterval(-TimeInterval(days) * 86_400)
+        return try savingRows().filter { $0.updatedAt <= cutoff }.count
     }
 
     /// The editor's row for a date is read-only while its relay version is unreadable.

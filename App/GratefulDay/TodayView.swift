@@ -92,9 +92,17 @@ struct TodayView: View {
                             }
                         }
                         if let owner = account.activeOwner,
-                           (try? ConflictReview(context: context, owner: owner).listsDay(day.dateString)) == true {
+                           let line = try? ConflictReview(context: context, owner: owner).dayLine(day.dateString, isToday: true),
+                           !line.opensScreen {
+                            Text(ConflictCopy.dayLine(line))
+                                .font(GDFont.sectionLabel)
+                                .foregroundStyle(GDColor.foreground)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("today.tooLong")
+                        } else if let owner = account.activeOwner,
+                           let line = try? ConflictReview(context: context, owner: owner).dayLine(day.dateString, isToday: true) {
                             Button { showingConflicts = true } label: {
-                                Text(SyncCopy.alsoChangedElsewhere)
+                                Text(ConflictCopy.dayLine(line))
                                     .font(GDFont.sectionLabel)
                                     .foregroundStyle(GDColor.foreground)
                                     .multilineTextAlignment(.leading)
@@ -103,7 +111,7 @@ struct TodayView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("today.conflict")
-                        } else if let kept = try? repo.setAsideVersions().filter({ $0.dateString == day.dateString }), !kept.isEmpty {
+                        } else if let kept = try? repo.dayLineSetAsideVersions(day.dateString), !kept.isEmpty {
                             EarlierVersionLine { setAside = SetAsideFilter(ids: Set(kept.map(\.id))) }
                                 .accessibilityIdentifier("today.earlierVersion")
                         }
@@ -134,9 +142,16 @@ struct TodayView: View {
 
                     // Chief P25: follows today's row. Only an imported day still
                     // matching its relay version drops the label.
-                    if store.container.map({ JournalRepository(context: $0.mainContext, activeOwner: account.activeOwner)
-                        .showsLocalOnlyLabel(day.dateString) }) ?? true {
+                    switch store.container.map({ JournalRepository(context: $0.mainContext, activeOwner: account.activeOwner)
+                        .dayMark(day.dateString) }) ?? .localOnly {
+                    case .localOnly:
                         LocalOnlyFooter()
+                    case .saving:
+                        SavingMark(detail: SyncService.savingDetail(
+                            sync, text: store.container.flatMap { try? JournalRepository(context: $0.mainContext, activeOwner: account.activeOwner).text(for: day) } ?? "",
+                            isToday: true), identifier: "today.saving")
+                    case .none:
+                        EmptyView()
                     }
                 }
                 .padding(.horizontal, GDSpacing.medium)

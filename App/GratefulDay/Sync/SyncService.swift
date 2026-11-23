@@ -27,6 +27,21 @@ final class SyncService {
         case noWriteRelays
     }
     private(set) var publishDeferral: PublishDeferral?
+
+    /// The Saving mark's tap text: different while the account lists
+    /// nowhere to save, since "we'll keep trying" would be false (§1).
+    static func savingDetail(_ sync: SyncService, text: String = "", isToday: Bool = false) -> String {
+        if sync.relays?.write?.isEmpty == true { return SyncCopy.savingDetailNoWriteRelays }
+        return SyncCopy.savingDetail
+    }
+
+    /// Runs a read-then-publish pass for the connected account (set by the
+    /// app). Used by Try now and after conflict choices.
+    var runner: (() -> Void)?
+    func tryNow() { runner?() }
+
+    /// The last read didn't complete (spec B): nothing was published.
+    var couldNotReach: Bool { status == .failed || publishDeferral == .relayListUnknown }
     private(set) var lastPublish: PublishPass.Summary?
 
     private let fetcher: RelayFetcher
@@ -121,10 +136,18 @@ final class SyncService {
         lastPublish = nil
         guard let write = set.write else { publishDeferral = .relayListUnknown; return }
         guard !write.isEmpty else { publishDeferral = .noWriteRelays; return }
-        let allowed = (try? JournalRepository(context: context, activeOwner: owner)
-            .flag(JournalFlag.publishDisclosureAccepted)) ?? false
+        // Spec A: accepted for this account on this iPhone.
+        let allowed = (try? PublishDisclosure(context: context, owner: owner).isAccepted()) ?? false
         guard allowed else { publishDeferral = .notAllowedYet; return }
         publishDeferral = nil
+        // Spec B step 3: days written here without an account are sorted
+        // against what was just read, before anything is published.
+        do {
+            try FirstConnectSort(context: context, owner: owner).run()
+        } catch {
+            StorageLog.error("Sorting this iPhone's days failed", error: error)
+            return
+        }
         let pass = PublishPass(context: context, owner: owner, secret: secret, set: set,
                                fetcher: fetcher, publisher: publisher, isCurrent: isCurrent)
         do {

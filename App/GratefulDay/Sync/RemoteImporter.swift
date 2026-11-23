@@ -78,10 +78,16 @@ struct RemoteImporter {
                 // same key, still applies (P30 M1).
                 if !by.isEmpty, !by.isDisjoint(with: try outbox.ownEventIds(dateString: dateString)) { continue }
                 guard let row, row.deletedAt == nil else { continue }
+                // §7 Keep this iPhone's: the row is based on this deletion
+                // already, so meeting it again is nothing new.
+                if let base = row.remoteEventID, by.contains(base) { continue }
+                if hasResolvedDeletion(dateString, at: at) { continue }
+                retireBlockedMarkers(dateString)
                 if hasPendingEdits(row) {
                     // A remote delete against unsent local edits is a conflict (§4.2).
                     row.syncStateRaw = SyncState.conflict.rawValue
                     retireOpenConflictCopies(dateString)
+                    markDeletedInAccount(dateString, at: at, by: by, row: row)
                     summary.conflicts += 1
                     continue
                 }
@@ -110,6 +116,9 @@ struct RemoteImporter {
                     continue
                 }
                 if row.remoteEventID == eventId, row.syncState != .blocked { continue }   // already based on it
+                retireBlockedMarkers(dateString)
+                // A readable version is newer than any deletion already met.
+                retire(dateString, .deletedInAccountInConflict)
                 if hasPendingEdits(row) {
                     if row.notesText == text {
                         row.remoteEventID = eventId
@@ -161,7 +170,24 @@ struct RemoteImporter {
             archive(text, dateString: dateString, reason: .remoteInConflict, eventId: eventId, surfaced: true,
                     isPrivate: isPrivate, eventCreatedAt: createdAt)
         }
-        if case .deleted = remote { retireOpenConflictCopies(dateString) }
+        switch remote {
+        case .entry:
+            retireBlockedMarkers(dateString)
+            retire(dateString, .deletedInAccountInConflict)
+        case .deleted(let at, let by):
+            retireOpenConflictCopies(dateString)
+            retireBlockedMarkers(dateString)
+            markDeletedInAccount(dateString, at: at, by: by, row: row)
+        case .blocked(let eventId, _):
+            // The account's newest version can't be read: the day is listed
+            // under "Can't compare these yet", never hidden (acceptance 6).
+            if !hasArchive(dateString, eventId: eventId, reason: .localInConflict) {
+                archive(row.notesText, dateString: dateString, reason: .localInConflict,
+                        eventId: eventId, surfaced: false, isPrivate: row.isPrivate)
+            }
+        case nil:
+            break
+        }
         try context.save()
     }
 
@@ -195,11 +221,51 @@ struct RemoteImporter {
     /// its earlier text is no longer the account's version. It stays in the
     /// store, hidden, and is never offered on the conflict screen (P34 M1).
     private func retireOpenConflictCopies(_ dateString: String) {
-        let o: String? = owner, raw = EarlierVersionReason.remoteInConflict.rawValue
+        retire(dateString, .remoteInConflict)
+    }
+
+    private func retire(_ dateString: String, _ reason: EarlierVersionReason) {
+        let o: String? = owner, raw = reason.rawValue
         let d = FetchDescriptor<EarlierVersion>(predicate: #Predicate {
             $0.ownerPubkey == o && $0.dateString == dateString && $0.reasonRaw == raw && !$0.dismissed
         })
         for copy in (try? context.fetch(d)) ?? [] { copy.dismissed = true }
+    }
+
+    /// The person already chose, on the conflict screen, what to do about
+    /// this deletion (its marker was resolved).
+    private func hasResolvedDeletion(_ dateString: String, at: Int) -> Bool {
+        let o: String? = owner, raw = EarlierVersionReason.deletedInAccountInConflict.rawValue, when: Int? = at
+        let d = FetchDescriptor<EarlierVersion>(predicate: #Predicate {
+            $0.ownerPubkey == o && $0.dateString == dateString && $0.reasonRaw == raw
+                && $0.eventCreatedAt == when && $0.dismissed
+        })
+        return ((try? context.fetchCount(d)) ?? 0) > 0
+    }
+
+    /// §7: the account deleted a day this iPhone has unsent writing for.
+    /// A marker (once per deletion time) lets the conflict screen list it;
+    /// the row keeps its text and its base.
+    private func markDeletedInAccount(_ dateString: String, at: Int, by: Set<String>, row: JournalEntry) {
+        let o: String? = owner, raw = EarlierVersionReason.deletedInAccountInConflict.rawValue, when: Int? = at
+        let d = FetchDescriptor<EarlierVersion>(predicate: #Predicate {
+            $0.ownerPubkey == o && $0.dateString == dateString && $0.reasonRaw == raw && $0.eventCreatedAt == when
+        })
+        if ((try? context.fetchCount(d)) ?? 0) > 0 { return }
+        archive("", dateString: dateString, reason: .deletedInAccountInConflict, eventId: by.sorted().first,
+                surfaced: false, isPrivate: row.isPrivate, eventCreatedAt: at)
+    }
+
+    /// The account's version can be read now, or the account deleted the
+    /// day: a marker saying its text couldn't be read no longer describes
+    /// it. It stays in the store, hidden, so the day leaves "Can't compare
+    /// these yet" (Audit #16 L2; Prep §10).
+    private func retireBlockedMarkers(_ dateString: String) {
+        let o: String? = owner, raw = EarlierVersionReason.localInConflict.rawValue
+        let d = FetchDescriptor<EarlierVersion>(predicate: #Predicate {
+            $0.ownerPubkey == o && $0.dateString == dateString && $0.reasonRaw == raw && !$0.dismissed
+        })
+        for marker in (try? context.fetch(d)) ?? [] { marker.dismissed = true }
     }
 
     private func archive(_ text: String, dateString: String, reason: EarlierVersionReason, eventId: String?, surfaced: Bool,

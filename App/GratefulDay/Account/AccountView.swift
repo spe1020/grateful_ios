@@ -20,6 +20,11 @@ struct AccountView: View {
     /// The flow [Try again] reopens, for notices that offer it.
     @State private var retry: Sheet?
 
+    private var longSaving: Int? {
+        guard let context = store.container?.mainContext, let owner = account.activeOwner else { return nil }
+        return try? JournalRepository(context: context, activeOwner: owner).longSavingCount()
+    }
+
     var body: some View {
         List {
             switch account.state {
@@ -51,6 +56,20 @@ struct AccountView: View {
                     Section {
                         Text(SyncCopy.noWriteRelays)
                             .accessibilityIdentifier("account.noWriteRelays")
+                    }
+                } else if sync.couldNotReach {
+                    // Spec B: the read didn't complete, so nothing was published.
+                    Section {
+                        Text(SyncCopy.couldNotReach)
+                            .accessibilityIdentifier("account.couldNotReach")
+                    }
+                } else if let n = longSaving, n > 0 {
+                    // 7 days in Saving: one quiet line, no alert or badge.
+                    Section {
+                        Text(SyncCopy.longSaving(n))
+                            .accessibilityIdentifier("account.longSaving")
+                        Button(SyncCopy.tryNow) { sync.tryNow() }
+                            .accessibilityIdentifier("account.tryNow")
                     }
                 }
             case .keyMissing:

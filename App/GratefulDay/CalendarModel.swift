@@ -8,6 +8,8 @@ struct CalendarDay: Identifiable, Equatable {
     let isToday: Bool
     let isFuture: Bool
     let hasReflection: Bool
+    /// Not yet saved to the account (the Saving mark).
+    var saving: Bool = false
     /// Only another (not connected) account wrote this day (P17).
     var otherAccountOnly: Bool = false
     var id: String { dateString }
@@ -26,6 +28,7 @@ final class CalendarModel {
     private(set) var reflectionDates: Set<String> = []
     private(set) var totalCount = 0
     private(set) var otherAccountDates: Set<String> = []
+    private(set) var savingDates: Set<String> = []
     private(set) var otherAccountDayCount = 0
 
     private let repository: JournalRepository
@@ -92,6 +95,7 @@ final class CalendarModel {
             reflectionDates = try repository.reflectionDates(from: first, through: last)
             totalCount = try repository.totalReflectionCount()
             otherAccountDates = try repository.otherAccountDates(from: first, through: last)
+            savingDates = try repository.savingDates(from: first, through: last)
             otherAccountDayCount = try repository.otherAccountDayCount()
             loadState = .ready
         } catch {
@@ -112,6 +116,7 @@ final class CalendarModel {
             let mine = reflectionDates.contains(ds)
             return CalendarDay(dateString: ds, dayNumber: offset + 1, isToday: ds == todayString,
                                isFuture: ds > todayString, hasReflection: mine,
+                               saving: mine && savingDates.contains(ds),
                                otherAccountOnly: !mine && otherAccountDates.contains(ds))
         }
         return Array(repeating: nil, count: leading) + days

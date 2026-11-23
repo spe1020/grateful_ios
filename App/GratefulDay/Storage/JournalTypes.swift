@@ -34,4 +34,22 @@ enum EarlierVersionReason: String, Codable, Sendable {
     /// M6: the text the person didn't keep when choosing between this
     /// iPhone's and the account's version. Shown in Set aside.
     case notKept
+    /// Marker: the account deleted this day while this iPhone had unsent
+    /// writing for it (Prep §7). `eventCreatedAt` is the deletion's time.
+    /// Not shown in Set aside; the row still holds the text.
+    case deletedInAccountInConflict
+    /// Set aside (§7, Let it stay deleted): this iPhone's text for a day
+    /// the account deleted.
+    case deletedFromAccount
+    /// Set aside (§9, Delete it everywhere): the account's text for a day
+    /// deleted on this iPhone.
+    case deletedHere
+    /// Set aside (§12): written here before connecting, for a day the person
+    /// had deleted under the account. Kept, not put back; no other line.
+    case writtenBeforeConnectingDeleted
+
+    /// Shown in Set aside (P22, M6).
+    var isSetAside: Bool {
+        [.replacedByRemote, .notKept, .deletedFromAccount, .deletedHere, .writtenBeforeConnectingDeleted].contains(self)
+    }
 }
