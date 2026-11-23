@@ -247,6 +247,17 @@ struct JournalRepository {
         return row.syncState != .synced
     }
 
+    /// Chief P42 (Prep's ruling): a day that's public on the account says so
+    /// wherever it's shown or edited, because editing it on iOS republishes it
+    /// in plaintext. Only the active account's day that came from relays as
+    /// public shows the line. Private days, guest days and days that exist
+    /// only on this iPhone show nothing new. Nothing about publishing changes.
+    func showsPublicLabel(_ dateString: String) -> Bool {
+        guard let owner = activeOwner, let row = try? entry(for: dateString) else { return false }
+        return row.ownerPubkey == owner && !row.isPrivate && row.remoteEventID != nil
+            && row.deletedAt == nil && !EntryNotes.split(row.notesText).isEmpty
+    }
+
     /// What a day says about where it's saved (flows doc, "Incomplete sync").
     enum DayMark: Equatable {
         /// Guest: "On this iPhone only".

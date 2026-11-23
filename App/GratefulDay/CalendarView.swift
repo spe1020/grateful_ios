@@ -258,6 +258,10 @@ struct DayDetailView: View {
                             .textSelection(.enabled)
                     }
                     .accessibilityIdentifier("day.notes")
+                    // Chief P42: a day public on the account says so wherever it's shown.
+                    if !notes.isEmpty, repository.showsPublicLabel(dateString) {
+                        PublicDayLabel(identifier: "day.public")
+                    }
                     if let dayLine, !dayLine.opensScreen {
                         Text(ConflictCopy.dayLine(dayLine))
                             .font(GDFont.sectionLabel)
