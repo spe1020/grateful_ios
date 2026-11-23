@@ -108,6 +108,11 @@ struct TodayCard: View {
             // layout: without this a relaunch shows Wisdom while the kept
             // page (and VoiceOver) is Affirmation.
             .onAppear { if let current { proxy.scrollTo(current, anchor: .leading) } }
+            // A new day resets the page without a scroll (spec 5); keep the
+            // pager on the page the selection names.
+            .onChange(of: current) { _, page in
+                if let page { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { proxy.scrollTo(page, anchor: .leading) } }
+            }
             }
 
             if pages.count > 1 {
@@ -137,9 +142,12 @@ struct TodayCard: View {
         HStack(spacing: 0) {
             ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
                 Button { go(to: index) } label: {
+                    // Full-strength colour for both states (the audit's contrast
+                    // check): the current page is filled, the others outlined.
                     Circle()
-                        .fill(GDColor.foreground.opacity(index == currentIndex ? 1 : 0.3))
-                        .frame(width: 8, height: 8)
+                        .strokeBorder(GDColor.foreground, lineWidth: 1.5)
+                        .background(Circle().fill(index == currentIndex ? GDColor.foreground : Color.clear))
+                        .frame(width: 10, height: 10)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
