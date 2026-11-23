@@ -78,6 +78,7 @@ struct RemoteImporter {
                 // same key, still applies (P30 M1).
                 if !by.isEmpty, !by.isDisjoint(with: try outbox.ownEventIds(dateString: dateString)) { continue }
                 guard let row, row.deletedAt == nil else { continue }
+                retireBlockedMarkers(dateString)
                 if hasPendingEdits(row) {
                     // A remote delete against unsent local edits is a conflict (§4.2).
                     row.syncStateRaw = SyncState.conflict.rawValue
@@ -110,6 +111,7 @@ struct RemoteImporter {
                     continue
                 }
                 if row.remoteEventID == eventId, row.syncState != .blocked { continue }   // already based on it
+                retireBlockedMarkers(dateString)
                 if hasPendingEdits(row) {
                     if row.notesText == text {
                         row.remoteEventID = eventId
@@ -162,6 +164,8 @@ struct RemoteImporter {
                     isPrivate: isPrivate, eventCreatedAt: createdAt)
         }
         if case .deleted = remote { retireOpenConflictCopies(dateString) }
+        if case .entry = remote { retireBlockedMarkers(dateString) }
+        if case .deleted = remote { retireBlockedMarkers(dateString) }
         try context.save()
     }
 
@@ -200,6 +204,18 @@ struct RemoteImporter {
             $0.ownerPubkey == o && $0.dateString == dateString && $0.reasonRaw == raw && !$0.dismissed
         })
         for copy in (try? context.fetch(d)) ?? [] { copy.dismissed = true }
+    }
+
+    /// The account's version can be read now, or the account deleted the
+    /// day: a marker saying its text couldn't be read no longer describes
+    /// it. It stays in the store, hidden, so the day leaves "Can't compare
+    /// these yet" (Audit #16 L2; Prep §10).
+    private func retireBlockedMarkers(_ dateString: String) {
+        let o: String? = owner, raw = EarlierVersionReason.localInConflict.rawValue
+        let d = FetchDescriptor<EarlierVersion>(predicate: #Predicate {
+            $0.ownerPubkey == o && $0.dateString == dateString && $0.reasonRaw == raw && !$0.dismissed
+        })
+        for marker in (try? context.fetch(d)) ?? [] { marker.dismissed = true }
     }
 
     private func archive(_ text: String, dateString: String, reason: EarlierVersionReason, eventId: String?, surfaced: Bool,

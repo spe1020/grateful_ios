@@ -421,6 +421,56 @@ final class ConflictReviewTests: XCTestCase {
         XCTAssertEqual(try row("2026-11-20").notesText, "mine")
     }
 
+    // MARK: - Audit #16 L2
+
+    private func blockedConflict(_ date: String, local: String, at: Int = 400) throws {
+        let d = day(date)
+        context.insert(JournalEntry(dateString: d.dateString, dayOfYear: d.dayOfYear, publishedAt: d.publishedAt,
+                                    timeZoneID: zone.identifier, notesText: local, now: t0, ownerPubkey: owner))
+        try context.save()
+        try RemoteImporter(context: context, owner: owner)
+            .apply([date: .blocked(eventId: String(repeating: "a", count: 64), createdAt: at)], zone: zone)
+        XCTAssertEqual(try review.load().blocked.map(\.dateString), [date])
+    }
+
+    /// L2: blocked, then readable: a normal row, no longer blocked.
+    func testBlockedDayThatBecomesReadableLeavesCantCompare() throws {
+        try blockedConflict("2026-11-21", local: "written here")
+        let readable = try remote("2026-11-21", "account text", at: 500)
+        try RemoteImporter(context: context, owner: owner)
+            .apply(RemoteJournal.days(from: [readable], owner: owner, privateKey: secret), zone: zone)
+        let days = try review.load()
+        XCTAssertTrue(days.blocked.isEmpty)
+        XCTAssertEqual(days.items.map(\.accountText), ["account text"])
+    }
+
+    /// L2 (Audit's case): blocked, then readable, then deleted on the
+    /// account: never back under "Can't compare these yet".
+    func testBlockedThenReadableThenDeletedIsNotBlockedAgain() throws {
+        try blockedConflict("2026-11-21", local: "written here")
+        let readable = try remote("2026-11-21", "account text", at: 500)
+        try RemoteImporter(context: context, owner: owner)
+            .apply(RemoteJournal.days(from: [readable], owner: owner, privateKey: secret), zone: zone)
+        let k5 = try EntryDeletion.template(pubkey: owner, dateString: "2026-11-21", eventId: readable.id)
+            .signed(privateKey: secret, createdAt: 900)
+        try RemoteImporter(context: context, owner: owner)
+            .apply(RemoteJournal.days(from: [readable, k5], owner: owner, privateKey: secret), zone: zone)
+        let days = try review.load()
+        XCTAssertTrue(days.blocked.isEmpty, "not shown as unreadable again")
+        XCTAssertTrue(days.items.isEmpty)
+        XCTAssertEqual(try row("2026-11-21").syncState, .conflict)
+        XCTAssertEqual(try row("2026-11-21").notesText, "written here")
+    }
+
+    /// L2: blocked, then deleted on the account.
+    func testBlockedThenDeletedLeavesCantCompare() throws {
+        try blockedConflict("2026-11-21", local: "written here")
+        try RemoteImporter(context: context, owner: owner)
+            .apply(["2026-11-21": .deleted(at: 900, by: [])], zone: zone)
+        XCTAssertTrue(try review.load().blocked.isEmpty)
+        XCTAssertEqual(try row("2026-11-21").notesText, "written here")
+    }
+
     private func earlier(_ date: String) throws -> [String] {
         try context.fetch(FetchDescriptor<EarlierVersion>()).filter { $0.dateString == date && $0.reason == .remoteInConflict }.map(\.notesText)
     }
