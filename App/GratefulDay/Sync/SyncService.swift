@@ -98,6 +98,17 @@ final class SyncService {
     /// opening. Relay reliability, Priority B (Chief 2dfa43a6).
     private(set) var unreachableSince: [URL: Date] = [:]
     var unreachableMemory: TimeInterval = 600
+    /// Whether, with `remembered` not dialed, at least 2 bootstrap relays and
+    /// at least 2 write relays (all of them when there are fewer than 2) are
+    /// still dialed (Chief P47).
+    static func keepsEnoughDialable(remembered: Set<URL>, bootstrap: [URL], write: [URL]?) -> Bool {
+        func enough(_ relays: [URL]) -> Bool {
+            let unique = Set(relays)
+            return unique.subtracting(remembered).count >= min(2, unique.count)
+        }
+        return enough(bootstrap) && enough(write ?? [])
+    }
+
     /// Remembered relays still inside `unreachableMemory`.
     func rememberedUnreachable() -> Set<URL> {
         let now = now()
@@ -301,7 +312,22 @@ final class SyncService {
         if !Task.isCancelled, isCurrent(), networkWorked {
             let at = now()
             unreachableSince = unreachableSince.filter { at.timeIntervalSince($0.value) < unreachableMemory }
-            for url in skipped { unreachableSince[url] = at }
+            // Chief P47 (Audit #22 L1): never remember so many that fewer
+            // than 2 bootstrap relays, or fewer than 2 of the account's write
+            // relays (all of them when it has fewer than 2), stay dialable.
+            // Otherwise a partial stall would block every automatic pass's
+            // two-answer rule until the memory expires.
+            var held: [URL] = []
+            for url in skipped {
+                var next = Set(unreachableSince.keys)
+                next.insert(url)
+                if Self.keepsEnoughDialable(remembered: next, bootstrap: bootstrap, write: set.write) {
+                    unreachableSince[url] = at
+                } else {
+                    held.append(url)
+                }
+            }
+            if !held.isEmpty { SyncLog.note("not remembered", "too few would be left to dial: \(SyncLog.hosts(held))") }
         }
         if let deferral = publishDeferral { SyncLog.note("publishing deferred", "\(deferral)") }
         if let p = lastPublish {

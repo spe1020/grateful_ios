@@ -141,9 +141,9 @@ final class RelayMemoryTests: XCTestCase {
         let relays = RelaySet.defaultRead.enumerated().map { FakeRelay($1.host!, behavior: $0 == 0 ? .normal : .neverConnects) }
         let sync = service(relays)
         await pass(sync)
-        XCTAssertEqual(sync.rememberedUnreachable().count, 4)
+        XCTAssertEqual(sync.rememberedUnreachable().count, 3, "P47: 2 bootstrap relays stay dialable")
         await pass(sync)
-        XCTAssertTrue(relays.dropFirst().allSatisfy { $0.connectCount == 1 }, "remembered: not dialed again")
+        XCTAssertEqual(relays.dropFirst().filter { $0.connectCount == 1 }.count, 3, "remembered: not dialed again")
         XCTAssertEqual(sync.publishDeferral, .relayListUnknown)
         XCTAssertNil(sync.relays?.write, "unknown, never the defaults")
         XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty })
@@ -156,9 +156,12 @@ final class RelayMemoryTests: XCTestCase {
         executionTimeAllowance = 60
         try entry("2026-11-20", "stays here")
         try accept()
-        let list = try relayList(["wss://nos.lol", "wss://relay.nostr.band"])
-        let relays = RelaySet.defaultRead.map {
-            FakeRelay($0.host!, events: [list], behavior: $0.host == "relay.nostr.band" ? .neverConnects : .normal)
+        // Three write relays (so P47's floor lets one be remembered); primal
+        // connects but never answers.
+        let list = try relayList(["wss://nos.lol", "wss://relay.primal.net", "wss://relay.nostr.band"])
+        let relays = RelaySet.defaultRead.map { url -> FakeRelay in
+            let behavior: FakeRelay.Behavior = url.host == "relay.nostr.band" ? .neverConnects : url.host == "relay.primal.net" ? .silent : .normal
+            return FakeRelay(url.host!, events: [list], behavior: behavior)
         }
         let sync = service(relays)
         await pass(sync)
@@ -166,7 +169,7 @@ final class RelayMemoryTests: XCTestCase {
         await pass(sync)
         XCTAssertEqual(relays.first { $0.url == band }!.connectCount, 1)
         XCTAssertEqual(sync.lastPublish?.sent, 0)
-        XCTAssertEqual(sync.lastPublish?.deferred, 1, "one of two write relays answered: unknown, not sent")
+        XCTAssertEqual(sync.lastPublish?.deferred, 1, "one of three write relays answered: unknown, not sent")
         XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty })
         XCTAssertEqual(try row("2026-11-20").syncState, .localOnly)
     }
@@ -269,6 +272,70 @@ final class RelayMemoryTests: XCTestCase {
         let other = try NostrKeys.generatePrivateKey()
         await sync.run(owner: KeyVault.pubkeyHex(for: other)!, secret: other, context: context)
         XCTAssertEqual(bandRelay.connectCount, 2, "the new account's pass dials it")
+    }
+
+    /// Chief P47 (Audit #22 L1): a partial stall where only 1 of the 5
+    /// bootstrap relays opens. 2 stay dialable, so when the network
+    /// recovers, the next automatic pass (no Try now) reaches the
+    /// two-answer rule and resolves the relay list.
+    func testPartialStallLeavesEnoughRelaysForTheNextAutomaticPass() async throws {
+        executionTimeAllowance = 60
+        final class Switch: @unchecked Sendable { var stalled = true }
+        let net = Switch()
+        let first = RelaySet.defaultRead[0]
+        let stalled = RelaySet.defaultRead.map { FakeRelay($0.host!, behavior: $0 == first ? .normal : .neverConnects) }
+        let healthy = RelaySet.defaultRead.map { FakeRelay($0.host!) }
+        struct Switching: RelayTransport {
+            let net: Switch, stalled: FakeTransport, healthy: FakeTransport
+            func connect(_ url: URL) async throws -> RelayConnection {
+                try await (net.stalled ? stalled : healthy).connect(url)
+            }
+        }
+        let map = { (r: [FakeRelay]) in FakeTransport(relays: Dictionary(uniqueKeysWithValues: r.map { ($0.url, $0) })) }
+        let transport = Switching(net: net, stalled: map(stalled), healthy: map(healthy))
+        var fetcher = RelayFetcher(transport: transport); fetcher.pageTimeout = .milliseconds(300)
+        var publisher = RelayPublisher(transport: transport); publisher.timeout = .milliseconds(300)
+        let sync = SyncService(fetcher: fetcher, publisher: publisher)
+        let clock = clock
+        sync.now = { clock.value }
+        await pass(sync)
+        XCTAssertEqual(sync.publishDeferral, .relayListUnknown, "only one bootstrap answer")
+        XCTAssertEqual(sync.rememberedUnreachable().count, 3, "2 of 5 bootstrap relays stay dialable")
+
+        net.stalled = false
+        clock.value += 60
+        await pass(sync)
+        XCTAssertEqual(healthy.filter { $0.connectCount >= 1 }.count, 2, "the two kept dialable")
+        XCTAssertFalse(sync.couldNotReach)
+        XCTAssertNotEqual(sync.publishDeferral, .relayListUnknown, "two answers: the relay list is known")
+        XCTAssertNotNil(sync.relays?.write)
+    }
+
+    /// Chief P47: the same floor for the account's write set. With two write
+    /// relays, the one that never connects isn't remembered (both stay
+    /// dialable); with a single write relay, it never is.
+    func testWriteSetFloorKeepsTwoOrAllWriteRelaysDialable() async throws {
+        executionTimeAllowance = 60
+        for write in [["wss://nos.lol", "wss://relay.nostr.band"], ["wss://relay.nostr.band"]] {
+            let list = try relayList(write)
+            let relays = RelaySet.defaultRead.map {
+                FakeRelay($0.host!, events: [list], behavior: $0.host == "relay.nostr.band" ? .neverConnects : .normal)
+            }
+            let sync = service(relays)
+            await pass(sync)
+            XCTAssertEqual(sync.relays?.write?.count, write.count)
+            XCTAssertEqual(sync.rememberedUnreachable(), [], "\(write.count) write relays: none remembered")
+            clock.value += 60
+            await pass(sync)
+            XCTAssertEqual(relays.first { $0.url == band }!.connectCount, 2, "dialed again")
+        }
+        // The pure rule, for the counts in between.
+        let b = RelaySet.defaultRead
+        let w3 = Array(b.prefix(3))
+        XCTAssertTrue(SyncService.keepsEnoughDialable(remembered: [w3[0]], bootstrap: b, write: w3))
+        XCTAssertFalse(SyncService.keepsEnoughDialable(remembered: [w3[0], w3[1]], bootstrap: b, write: w3))
+        XCTAssertFalse(SyncService.keepsEnoughDialable(remembered: Set(b.prefix(4)), bootstrap: b, write: nil))
+        XCTAssertTrue(SyncService.keepsEnoughDialable(remembered: Set(b.prefix(3)), bootstrap: b, write: nil))
     }
 
     // MARK: - Journal and settings read in parallel
