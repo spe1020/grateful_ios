@@ -32,8 +32,6 @@ final class SyncService {
     /// nowhere to save, since "we'll keep trying" would be false (§1).
     static func savingDetail(_ sync: SyncService, text: String = "", isToday: Bool = false) -> String {
         if sync.relays?.write?.isEmpty == true { return SyncCopy.savingDetailNoWriteRelays }
-        // §8: a day too long to save is never sent; don't say we'll keep trying.
-        if ConflictReview.isTooLong(text) { return ConflictCopy.dayLine(.tooLong(isToday: isToday)) }
         return SyncCopy.savingDetail
     }
 

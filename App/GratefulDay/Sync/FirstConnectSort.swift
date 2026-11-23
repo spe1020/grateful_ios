@@ -93,6 +93,8 @@ struct FirstConnectSort {
                 if EntryNotes.split(mine.notesText) != EntryNotes.split(text) {
                     let notes = EntryNotes.split(mine.notesText)
                     mine.notesText = EntryNotes.join(notes + EntryNotes.split(text).filter { !notes.contains($0) })
+                    // Private wins on a combined day (spec B §4; Prep #17 G1).
+                    mine.isPrivate = mine.isPrivate || guest.isPrivate
                     mine.deletedAt = nil
                     mine.updatedAt = now()
                 }

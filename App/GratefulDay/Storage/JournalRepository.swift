@@ -251,43 +251,61 @@ struct JournalRepository {
         case none
     }
 
+    /// Prep's "Which days get the mark": only days the app is actually
+    /// sending. Before spec A is accepted for this account nothing is being
+    /// tried, so unsaved days stay "On this iPhone only". Days waiting on a
+    /// choice, blocked or too long to save show their own day line instead.
     func dayMark(_ dateString: String) -> DayMark {
-        guard let owner = activeOwner else { return .localOnly }
-        // A state that can't be read is never shown as saved.
+        guard activeOwner != nil else { return .localOnly }
         let found: JournalEntry?
         do { found = try entry(for: dateString) } catch { return .saving }
         guard let row = found else { return .none }
-        // A guest row waits for the first-connect sort; it isn't saved yet.
-        let hasText = row.deletedAt == nil && !EntryNotes.split(row.notesText).isEmpty
-        if row.ownerPubkey != owner { return hasText ? .saving : .none }
-        if row.syncState == .synced { return .none }
-        return hasText ? .saving : .none
+        return mark(for: row)
+    }
+
+    private var publishingAccepted: Bool {
+        guard let owner = activeOwner else { return false }
+        return (try? flag(PublishDisclosure.flagName(owner: owner))) ?? false
+    }
+
+    private func mark(for row: JournalEntry, accepted: Bool? = nil) -> DayMark {
+        guard row.deletedAt == nil, !EntryNotes.split(row.notesText).isEmpty else { return .none }
+        if row.ownerPubkey != nil, row.syncState == .synced { return .none }
+        guard accepted ?? publishingAccepted else { return .localOnly }
+        // A guest row is sorted and sent by the next pass.
+        if row.ownerPubkey == nil { return .saving }
+        switch row.syncState {
+        case .conflict, .blocked, .synced: return .none
+        case .localOnly:
+            return ConflictReview.isTooLong(EntryNotes.join(EntryNotes.split(row.notesText))) ? .none : .saving
+        }
+    }
+
+    /// Rows that show the Saving mark, one per day (the account's row wins).
+    private func savingRows(from start: String? = nil, through end: String? = nil) throws -> [JournalEntry] {
+        guard let owner = activeOwner else { return [] }
+        let accepted = publishingAccepted
+        let lo = start ?? "", hi = end ?? "9999"
+        // A simple predicate: Xcode 26 can't type-check a longer one in time.
+        let inRange = try context.fetch(FetchDescriptor<JournalEntry>(predicate: #Predicate {
+            $0.dateString >= lo && $0.dateString <= hi
+        }))
+        let rows = inRange.filter { $0.ownerPubkey == owner || $0.ownerPubkey == nil }
+        let mine = Set(rows.filter { $0.ownerPubkey == owner }.map { (r: JournalEntry) in r.dateString })
+        return rows.filter { (r: JournalEntry) in
+            (r.ownerPubkey != nil || !mine.contains(r.dateString)) && mark(for: r, accepted: accepted) == .saving
+        }
     }
 
     /// The account's days in `start...end` showing the Saving mark.
     func savingDates(from start: String, through end: String) throws -> Set<String> {
-        guard let owner = activeOwner else { return [] }
-        let o: String? = owner, synced = SyncState.synced.rawValue
-        let rows = try context.fetch(FetchDescriptor<JournalEntry>(predicate: #Predicate {
-            $0.dateString >= start && $0.dateString <= end && $0.deletedAt == nil
-                && ($0.ownerPubkey == o || $0.ownerPubkey == nil) && $0.syncStateRaw != synced
-        }))
-        let mine = Set(try context.fetch(FetchDescriptor<JournalEntry>(predicate: #Predicate {
-            $0.dateString >= start && $0.dateString <= end && $0.ownerPubkey == o && $0.syncStateRaw == synced
-        })).map(\.dateString))
-        return Set(rows.filter { !EntryNotes.split($0.notesText).isEmpty && ($0.ownerPubkey != nil || !mine.contains($0.dateString)) }
-            .map(\.dateString))
+        Set(try savingRows(from: start, through: end).map { (r: JournalEntry) in r.dateString })
     }
 
-    /// Reflections still in Saving after `days` days (the Settings line).
+    /// Days showing the Saving mark for `days` days or more (the Settings line).
     func longSavingCount(now: Date = .now, days: Int = 7) throws -> Int {
-        guard let owner = activeOwner else { return 0 }
         let cutoff = now.addingTimeInterval(-TimeInterval(days) * 86_400)
-        let o: String? = owner, synced = SyncState.synced.rawValue
-        let rows = try context.fetch(FetchDescriptor<JournalEntry>(predicate: #Predicate {
-            $0.deletedAt == nil && $0.ownerPubkey == o && $0.syncStateRaw != synced && $0.updatedAt <= cutoff
-        }))
-        return rows.filter { !EntryNotes.split($0.notesText).isEmpty }.count
+        return try savingRows().filter { $0.updatedAt <= cutoff }.count
     }
 
     /// The editor's row for a date is read-only while its relay version is unreadable.

@@ -136,4 +136,20 @@ final class FirstConnectSortTests: XCTestCase {
         XCTAssertEqual(try rows("2026-11-20").count, 1)
         XCTAssertEqual(EntryNotes.split(try mine("2026-11-20").notesText), ["account's draft", "written as guest"])
     }
+
+    /// G1 (Prep #17): the account's unsent day is public, the guest's is
+    /// private: the merged day is private.
+    func testMergedDayIsPrivateIfEitherWas() throws {
+        let d = day("2026-11-20")
+        let r = JournalEntry(dateString: d.dateString, dayOfYear: d.dayOfYear, publishedAt: d.publishedAt,
+                             timeZoneID: zone.identifier, notesText: "public, edited here", now: t0, ownerPubkey: owner)
+        r.isPrivate = false
+        context.insert(r)
+        try context.save()
+        try guest("2026-11-20", "private, as a guest")
+        try sort.run()
+        let m = try mine("2026-11-20")
+        XCTAssertTrue(m.isPrivate, "private wins")
+        XCTAssertEqual(EntryNotes.split(m.notesText), ["public, edited here", "private, as a guest"])
+    }
 }
