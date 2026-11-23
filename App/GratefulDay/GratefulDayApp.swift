@@ -14,6 +14,8 @@ struct GratefulDayApp: App {
     /// until the next launch; it publishes nothing and loses nothing.
     @State private var disclosureCount: Int?
     @State private var disclosureDeclined = false
+    /// An Account sheet is open: the spec A sheet waits until it closes.
+    @State private var accountFlowOpen = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -30,13 +32,23 @@ struct GratefulDayApp: App {
                 }
                 // A read pass belongs to one store and one account (Audit M3).
                 .onChange(of: store.container.map(ObjectIdentifier.init)) { _, _ in sync.reset() }
-                .onChange(of: account.activeOwner) { _, _ in sync.reset(); disclosureDeclined = false }
+                .onChange(of: account.activeOwner) { _, _ in
+                    sync.reset()
+                    disclosureDeclined = false
+                    // An account connected while the app is open (a new key,
+                    // an import, a restore) is read now, not at the next
+                    // return to the foreground: that pass is what brings up
+                    // the spec A sheet. Does nothing when signed out.
+                    readFromRelays()
+                }
                 .onChange(of: sync.publishDeferral) { _, deferral in
                     guard deferral == .notAllowedYet, !disclosureDeclined,
                           let context = store.container?.mainContext, let owner = account.activeOwner else { return }
                     disclosureCount = (try? PublishDisclosure(context: context, owner: owner).pendingCount()) ?? 0
                 }
-                .sheet(isPresented: Binding(get: { disclosureCount != nil }, set: { if !$0 { disclosureCount = nil } })) {
+                .onPreferenceChange(AccountFlowOpenKey.self) { accountFlowOpen = $0 }
+                .sheet(isPresented: Binding(get: { disclosureCount != nil && !accountFlowOpen },
+                                            set: { if !$0, !accountFlowOpen { disclosureCount = nil } })) {
                     PublishDisclosureSheet(count: disclosureCount ?? 0, onContinue: acceptDisclosure) {
                         disclosureDeclined = true
                         disclosureCount = nil

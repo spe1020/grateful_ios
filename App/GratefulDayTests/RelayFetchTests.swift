@@ -5,7 +5,12 @@ import GratefulDayCore
 
 /// A scripted relay: answers REQs from a fixed event list, or misbehaves.
 final class FakeRelay: RelayConnection, @unchecked Sendable {
-    enum Behavior { case normal, silent, closeWithAuth, refuseConnect, eventsNoEose }
+    enum Behavior {
+        case normal, silent, closeWithAuth, refuseConnect, eventsNoEose
+        /// The socket never finishes connecting: `send` waits until it's
+        /// closed, as `URLSessionWebSocketTask.send` does (for up to 60 s).
+        case neverConnects
+    }
     let url: URL
     let behavior: Behavior
     var events: [NostrEvent]
@@ -14,6 +19,7 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
     var pageCaps: [Int] = []
     private var outbox: [String] = []
     private var waiter: CheckedContinuation<String, Error>?
+    private var sendWaiter: CheckedContinuation<Void, Error>?
     private let lock = NSLock()
     private(set) var requests: [[String: Any]] = []
     /// How this relay answers an EVENT frame (M5b-2 publish tests).
@@ -36,6 +42,15 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
 
     func send(_ text: String) async throws {
         if lock.withLock({ isClosed }) { throw URLError(.cancelled) }
+        if behavior == .neverConnects {
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+                lock.lock()
+                if isClosed { lock.unlock(); c.resume(throwing: URLError(.cancelled)); return }
+                sendWaiter = c
+                lock.unlock()
+            }
+            return
+        }
         guard let array = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any] else { return }
         if array.first as? String == "EVENT", array.count >= 2, let obj = array[1] as? [String: Any] {
             lock.withLock { publishedFrames.append(text) }
@@ -57,7 +72,7 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
         guard array.first as? String == "REQ", let sub = array[1] as? String, let f = array[2] as? [String: Any] else { return }
         let index = lock.withLock { requests.append(f); return requests.count - 1 }
         switch behavior {
-        case .silent, .refuseConnect: return
+        case .silent, .refuseConnect, .neverConnects: return
         case .closeWithAuth: push("[\"CLOSED\",\"\(sub)\",\"auth-required: sign in\"]"); return
         case .normal, .eventsNoEose: break
         }
@@ -106,8 +121,11 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
         closeCount += 1
         let w = waiter
         waiter = nil
+        let s = sendWaiter
+        sendWaiter = nil
         lock.unlock()
         w?.resume(throwing: URLError(.cancelled))
+        s?.resume(throwing: URLError(.cancelled))
     }
 }
 
@@ -148,6 +166,21 @@ final class RelayFetchTests: XCTestCase {
     }
 
     private func filter() -> RelayFilter { RelayFilter(authors: [pubkey], kinds: [36669, 5]) }
+
+    /// First-connect fix: a relay whose socket never finishes connecting is
+    /// timed out by the page timeout like a silent one. It used to hold the
+    /// whole fetch until URLSession gave up (60 s), three times per pass.
+    func testRelayThatNeverConnectsTimesOutWithThePage() async throws {
+        let good = FakeRelay("a", events: [try entry("2026-11-20", "one", at: 1_000)])
+        let hung = FakeRelay("b", behavior: .neverConnects)
+        let started = Date()
+        let result = await fetcher([good, hung], timeout: .milliseconds(300)).fetch(filter(), from: [good.url, hung.url])
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3, "bounded by the page timeout")
+        XCTAssertEqual(result.outcomes[good.url], .answered)
+        XCTAssertEqual(result.outcomes[hung.url], .timedOut, "unknown, never read as empty")
+        XCTAssertEqual(result.events.count, 1)
+        XCTAssertGreaterThanOrEqual(hung.closeCount, 1, "the socket is closed, not left connecting")
+    }
 
     func testFetchPagesUntilNoNewEvents() async throws {
         let events = try (1...7).map { try entry(String(format: "2026-11-%02d", $0), "day \($0)", at: 1_000 + $0) }

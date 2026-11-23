@@ -129,11 +129,7 @@ struct RelayFetcher: Sendable {
     private func fetchPage(_ filter: RelayFilter, on connection: RelayConnection,
                            subscription: String) async -> ([NostrEvent], RelayOutcome) {
         if Task.isCancelled { return ([], .failed("cancelled")) }
-        do {
-            try await connection.send(filter.reqMessage(subscription: subscription))
-        } catch {
-            return ([], .failed("send"))
-        }
+        let request = filter.reqMessage(subscription: subscription)
         let timeout = pageTimeout
         // Events received before a timeout or close are kept: a relay that
         // never sends EOSE is unresolved, but what it did send still counts
@@ -141,6 +137,13 @@ struct RelayFetcher: Sendable {
         let collected = EventCollector()
         return await withTaskGroup(of: RelayOutcome?.self) { group in
             group.addTask {
+                // The send is inside the page timeout. The first send on a
+                // socket waits for the connection, and a relay that never
+                // finishes connecting holds it for URLSession's own 60 s.
+                // Every fetch waits for all its relays, so one such relay
+                // among the bootstrap five kept a pass reading for minutes
+                // and the spec A sheet never came up.
+                do { try await connection.send(request) } catch { return .failed("send") }
                 while true {
                     guard let text = try? await connection.receive() else { return .failed("closed") }
                     switch RelayMessage.parse(text) {

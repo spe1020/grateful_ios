@@ -440,6 +440,52 @@ final class PublishPassTests: XCTestCase {
         XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty })
     }
 
+    /// First connect on a new key (no relay list anywhere) while one
+    /// bootstrap relay never finishes connecting: the pass still ends, at the
+    /// disclosure, with nothing sent.
+    func testFirstConnectReachesTheDisclosureDespiteARelayThatNeverConnects() async throws {
+        try entry("2026-11-20", "private until told")
+        let relays = RelaySet.defaultRead.enumerated().map { FakeRelay($1.host!, behavior: $0 == 1 ? .neverConnects : .normal) }
+        let sync = service(relays)
+        let started = Date()
+        await sync.run(owner: owner, secret: secret, context: context)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5, "three page timeouts, not three of URLSession's")
+        XCTAssertEqual(sync.publishDeferral, .notAllowedYet, "the state that brings up the sheet")
+        XCTAssertFalse(sync.couldNotReach)
+        XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty }, "nothing before the disclosure")
+    }
+
+    /// The same with too few answers to know whether the account has a relay
+    /// list: the write set stays unknown (never the defaults), even with the
+    /// disclosure accepted, and Account says it couldn't reach the journal.
+    func testTooFewBootstrapAnswersNeverPublishToDefaults() async throws {
+        try entry("2026-11-20", "stays here")
+        try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
+        let relays = RelaySet.defaultRead.enumerated().map { FakeRelay($1.host!, behavior: $0 == 0 ? .normal : .neverConnects) }
+        let sync = service(relays)
+        await sync.run(owner: owner, secret: secret, context: context)
+        XCTAssertEqual(sync.publishDeferral, .relayListUnknown)
+        XCTAssertNil(sync.relays?.write, "unknown, not the defaults")
+        XCTAssertTrue(sync.couldNotReach)
+        XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty })
+    }
+
+    /// The app resets the service when an account connects and starts a pass
+    /// straight away. That start must not be swallowed by the pass it just
+    /// cancelled: it runs once the old one has closed its sockets.
+    func testStartRightAfterResetRunsANewPass() async throws {
+        try entry("2026-11-20", "private until told")
+        let relays = RelaySet.defaultRead.map { FakeRelay($0.host!) }
+        let sync = service(relays)
+        sync.start(owner: owner, secret: secret, context: context) { true }
+        sync.reset()
+        sync.start(owner: owner, secret: secret, context: context) { true }
+        let started = Date()
+        while sync.publishDeferral == nil, Date().timeIntervalSince(started) < 5 { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(sync.publishDeferral, .notAllowedYet)
+        XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty })
+    }
+
     /// Spec A, once per account on this iPhone: another account's
     /// acceptance (or the old account-less flag) never allows publishing.
     func testDisclosureIsPerAccount() async throws {

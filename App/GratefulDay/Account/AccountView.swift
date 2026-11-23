@@ -4,6 +4,13 @@ import NostrCore
 
 /// Settings → Account (Prep's F1–F8). No network: connecting stops once the
 /// key is stored (and backed up, if chosen). Publishing is M5b.
+/// Whether one of the Account sheets (restore, import, backup offer, sign
+/// out, remove) is open.
+struct AccountFlowOpenKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
 struct AccountView: View {
     @Environment(AccountModel.self) private var account
     @Environment(JournalStore.self) private var store
@@ -15,6 +22,8 @@ struct AccountView: View {
     }
 
     @State private var sheet: Sheet?
+    /// Between a connecting sheet closing and the backup offer opening.
+    @State private var offeringBackup = false
     @State private var confirmingCreate = false
     @State private var notice: String?
     /// The flow [Try again] reopens, for notices that offer it.
@@ -118,6 +127,9 @@ struct AccountView: View {
         } message: {
             Text(AccountCopy.createBody)
         }
+        // The spec A sheet waits for these flows: presenting it over one
+        // closes it, and the backup offer must not be lost that way.
+        .preference(key: AccountFlowOpenKey.self, value: sheet != nil || offeringBackup)
         .sheet(item: $sheet) { which in
             NavigationStack {
                 switch which {
@@ -147,7 +159,8 @@ struct AccountView: View {
         retry = nil
         switch result {
         case .connected:
-            DispatchQueue.main.async { sheet = .backupOffer }
+            offeringBackup = true
+            DispatchQueue.main.async { sheet = .backupOffer; offeringBackup = false }
         case .message(let text):
             notice = text
         case .retryable(let text, let flow):
