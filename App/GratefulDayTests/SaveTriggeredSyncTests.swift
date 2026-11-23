@@ -80,6 +80,9 @@ final class SaveTriggeredSyncTests: XCTestCase {
         while !condition(), Date().timeIntervalSince(started) < timeout { try await Task.sleep(for: .milliseconds(20)) }
     }
 
+    /// Holds a foreground retry until the test lets it run.
+    private final class Gate: @unchecked Sendable { var open = false }
+
     private func settle(_ seconds: Double) async throws { try await Task.sleep(for: .seconds(seconds)) }
 
     private func syncState() throws -> SyncState? { try repository.entry(for: day.dateString)?.syncState }
@@ -252,10 +255,13 @@ final class SaveTriggeredSyncTests: XCTestCase {
         let clock = Clock()
         var waits: [TimeInterval] = []
         sync.now = { clock.value }
+        // The retry waits until the test opens the gate, so the test changes
+        // the relays (or the day) before the retry runs, never after.
+        let gate = Gate()
         sync.retrySleep = { seconds in
             waits.append(seconds)
+            while !gate.open { try? await Task.sleep(for: .milliseconds(10)) }
             clock.value += seconds
-            try? await Task.sleep(for: .milliseconds(20))
         }
         try save("worth keeping", sync)
         try await waitUntil { sync.lastPublish != nil && sync.retryPending }
@@ -263,6 +269,7 @@ final class SaveTriggeredSyncTests: XCTestCase {
         XCTAssertEqual(try syncState(), .localOnly)
         let first = try XCTUnwrap(relays["nos.lol"]!.publishedFrames.first)
         relays["relay.primal.net"]!.okReply = .accept
+        gate.open = true
         try await waitUntil { runs == 2 && sync.status != .reading && sync.lastPublish?.synced == 1 }
         try await settle(0.3)
         XCTAssertEqual(waits.first ?? 0, DeliveryRules.backoff(afterAttempts: 1), accuracy: 1)
@@ -293,9 +300,12 @@ final class SaveTriggeredSyncTests: XCTestCase {
         final class Clock { var value = Date() }
         let clock = Clock()
         sync.now = { clock.value }
+        // The retry waits until the test opens the gate, so the test changes
+        // the relays (or the day) before the retry runs, never after.
+        let gate = Gate()
         sync.retrySleep = { seconds in
+            while !gate.open { try? await Task.sleep(for: .milliseconds(10)) }
             clock.value += seconds
-            try? await Task.sleep(for: .milliseconds(20))
         }
         try save("worth keeping", sync)
         try await waitUntil { sync.lastPublish != nil && sync.retryPending }
@@ -305,6 +315,7 @@ final class SaveTriggeredSyncTests: XCTestCase {
         let entry = try XCTUnwrap(repository.entry(for: day.dateString))
         entry.syncStateRaw = state.rawValue
         try context.save()
+        gate.open = true
         try await waitUntil { runs == 2 && sync.status != .reading }
         try await settle(1)
         XCTAssertEqual(runs, 2, "the due retry ran once, then nothing more")
