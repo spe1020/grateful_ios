@@ -64,13 +64,15 @@ struct PublishDisclosure {
         try JournalRepository(context: context, activeOwner: owner).setFlag(Self.flagName(owner: owner), now: now)
     }
 
-    /// Reflections of this account that would be saved now: written here
-    /// and not yet on the account.
+    /// Days that would be saved now: this account's unsaved reflections and
+    /// those written here without an account, counted once per day.
     func pendingCount() throws -> Int {
         let o: String? = owner, raw = SyncState.localOnly.rawValue
-        let rows = try context.fetch(FetchDescriptor<JournalEntry>(
+        let mine = try context.fetch(FetchDescriptor<JournalEntry>(
             predicate: #Predicate { $0.ownerPubkey == o && $0.syncStateRaw == raw && $0.deletedAt == nil }))
-        return rows.filter { !EntryNotes.split($0.notesText).isEmpty }.count
+        let guests = try context.fetch(FetchDescriptor<JournalEntry>(
+            predicate: #Predicate { $0.ownerPubkey == nil && $0.deletedAt == nil }))
+        return Set((mine + guests).filter { !EntryNotes.split($0.notesText).isEmpty }.map(\.dateString)).count
     }
 }
 

@@ -81,6 +81,7 @@ struct RemoteImporter {
                 // §7 Keep this iPhone's: the row is based on this deletion
                 // already, so meeting it again is nothing new.
                 if let base = row.remoteEventID, by.contains(base) { continue }
+                if hasResolvedDeletion(dateString, at: at) { continue }
                 retireBlockedMarkers(dateString)
                 if hasPendingEdits(row) {
                     // A remote delete against unsent local edits is a conflict (§4.2).
@@ -229,6 +230,17 @@ struct RemoteImporter {
             $0.ownerPubkey == o && $0.dateString == dateString && $0.reasonRaw == raw && !$0.dismissed
         })
         for copy in (try? context.fetch(d)) ?? [] { copy.dismissed = true }
+    }
+
+    /// The person already chose, on the conflict screen, what to do about
+    /// this deletion (its marker was resolved).
+    private func hasResolvedDeletion(_ dateString: String, at: Int) -> Bool {
+        let o: String? = owner, raw = EarlierVersionReason.deletedInAccountInConflict.rawValue, when: Int? = at
+        let d = FetchDescriptor<EarlierVersion>(predicate: #Predicate {
+            $0.ownerPubkey == o && $0.dateString == dateString && $0.reasonRaw == raw
+                && $0.eventCreatedAt == when && $0.dismissed
+        })
+        return ((try? context.fetchCount(d)) ?? 0) > 0
     }
 
     /// §7: the account deleted a day this iPhone has unsent writing for.

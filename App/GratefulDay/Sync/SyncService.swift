@@ -125,6 +125,14 @@ final class SyncService {
         let allowed = (try? PublishDisclosure(context: context, owner: owner).isAccepted()) ?? false
         guard allowed else { publishDeferral = .notAllowedYet; return }
         publishDeferral = nil
+        // Spec B step 3: days written here without an account are sorted
+        // against what was just read, before anything is published.
+        do {
+            try FirstConnectSort(context: context, owner: owner).run()
+        } catch {
+            StorageLog.error("Sorting this iPhone's days failed", error: error)
+            return
+        }
         let pass = PublishPass(context: context, owner: owner, secret: secret, set: set,
                                fetcher: fetcher, publisher: publisher, isCurrent: isCurrent)
         do {

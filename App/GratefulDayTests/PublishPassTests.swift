@@ -458,6 +458,25 @@ final class PublishPassTests: XCTestCase {
         XCTAssertTrue(try disclosure.isAccepted())
     }
 
+    /// Spec B: a day written before connecting is published after the
+    /// disclosure, sorted first (it was never sent as a guest row).
+    func testGuestDayIsPublishedAfterDisclosure() async throws {
+        let d = day("2026-11-20")
+        context.insert(JournalEntry(dateString: d.dateString, dayOfYear: d.dayOfYear, publishedAt: d.publishedAt,
+                                    timeZoneID: zone.identifier, notesText: "before connecting", now: t0, ownerPubkey: nil))
+        try context.save()
+        XCTAssertEqual(try PublishDisclosure(context: context, owner: owner).pendingCount(), 1)
+        let relays = RelaySet.defaultRead.map { FakeRelay($0.host!) }
+        let sync = service(relays)
+        await sync.run(owner: owner, secret: secret, context: context)
+        XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty }, "nothing before the disclosure")
+        try PublishDisclosure(context: context, owner: owner).accept()
+        await sync.run(owner: owner, secret: secret, context: context)
+        let sentDays = relays.flatMap(sent).filter { $0.kind == DailyEntry.kind }.compactMap { $0.tagValue("d") }
+        XCTAssertTrue(sentDays.contains("2026-11-20"))
+        XCTAssertEqual(try row("2026-11-20").ownerPubkey, owner)
+    }
+
     /// The sheet's count line counts this account's unsaved reflections only.
     func testDisclosureCountsUnsavedReflectionsOfThisAccount() throws {
         try entry("2026-11-18", "one")
