@@ -62,7 +62,12 @@ struct GratefulDayApp: App {
         }
     }
 
+    private func installRunner() {
+        sync.runner = { [self] in readFromRelays() }
+    }
+
     private func openStore() {
+        installRunner()
         guard UIApplication.shared.applicationState != .background else { return }
         store.openIfPossible(protectedDataAvailable: UIApplication.shared.isProtectedDataAvailable)
         account.refresh(context: store.container?.mainContext)

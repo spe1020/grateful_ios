@@ -142,9 +142,16 @@ struct TodayView: View {
 
                     // Chief P25: follows today's row. Only an imported day still
                     // matching its relay version drops the label.
-                    if store.container.map({ JournalRepository(context: $0.mainContext, activeOwner: account.activeOwner)
-                        .showsLocalOnlyLabel(day.dateString) }) ?? true {
+                    switch store.container.map({ JournalRepository(context: $0.mainContext, activeOwner: account.activeOwner)
+                        .dayMark(day.dateString) }) ?? .localOnly {
+                    case .localOnly:
                         LocalOnlyFooter()
+                    case .saving:
+                        SavingMark(detail: SyncService.savingDetail(
+                            sync, text: store.container.flatMap { try? JournalRepository(context: $0.mainContext, activeOwner: account.activeOwner).text(for: day) } ?? "",
+                            isToday: true), identifier: "today.saving")
+                    case .none:
+                        EmptyView()
                     }
                 }
                 .padding(.horizontal, GDSpacing.medium)

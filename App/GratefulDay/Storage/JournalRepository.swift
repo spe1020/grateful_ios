@@ -241,6 +241,55 @@ struct JournalRepository {
         return row.syncState != .synced
     }
 
+    /// What a day says about where it's saved (flows doc, "Incomplete sync").
+    enum DayMark: Equatable {
+        /// Guest: "On this iPhone only".
+        case localOnly
+        /// An account day not yet acknowledged by 2 write relays.
+        case saving
+        /// Saved to the account, or nothing to save.
+        case none
+    }
+
+    func dayMark(_ dateString: String) -> DayMark {
+        guard let owner = activeOwner else { return .localOnly }
+        // A state that can't be read is never shown as saved.
+        let found: JournalEntry?
+        do { found = try entry(for: dateString) } catch { return .saving }
+        guard let row = found else { return .none }
+        // A guest row waits for the first-connect sort; it isn't saved yet.
+        let hasText = row.deletedAt == nil && !EntryNotes.split(row.notesText).isEmpty
+        if row.ownerPubkey != owner { return hasText ? .saving : .none }
+        if row.syncState == .synced { return .none }
+        return hasText ? .saving : .none
+    }
+
+    /// The account's days in `start...end` showing the Saving mark.
+    func savingDates(from start: String, through end: String) throws -> Set<String> {
+        guard let owner = activeOwner else { return [] }
+        let o: String? = owner, synced = SyncState.synced.rawValue
+        let rows = try context.fetch(FetchDescriptor<JournalEntry>(predicate: #Predicate {
+            $0.dateString >= start && $0.dateString <= end && $0.deletedAt == nil
+                && ($0.ownerPubkey == o || $0.ownerPubkey == nil) && $0.syncStateRaw != synced
+        }))
+        let mine = Set(try context.fetch(FetchDescriptor<JournalEntry>(predicate: #Predicate {
+            $0.dateString >= start && $0.dateString <= end && $0.ownerPubkey == o && $0.syncStateRaw == synced
+        })).map(\.dateString))
+        return Set(rows.filter { !EntryNotes.split($0.notesText).isEmpty && ($0.ownerPubkey != nil || !mine.contains($0.dateString)) }
+            .map(\.dateString))
+    }
+
+    /// Reflections still in Saving after `days` days (the Settings line).
+    func longSavingCount(now: Date = .now, days: Int = 7) throws -> Int {
+        guard let owner = activeOwner else { return 0 }
+        let cutoff = now.addingTimeInterval(-TimeInterval(days) * 86_400)
+        let o: String? = owner, synced = SyncState.synced.rawValue
+        let rows = try context.fetch(FetchDescriptor<JournalEntry>(predicate: #Predicate {
+            $0.deletedAt == nil && $0.ownerPubkey == o && $0.syncStateRaw != synced && $0.updatedAt <= cutoff
+        }))
+        return rows.filter { !EntryNotes.split($0.notesText).isEmpty }.count
+    }
+
     /// The editor's row for a date is read-only while its relay version is unreadable.
     func isBlocked(_ dateString: String) throws -> Bool {
         try entry(for: dateString)?.syncState == .blocked

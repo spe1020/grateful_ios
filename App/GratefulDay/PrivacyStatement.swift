@@ -84,6 +84,37 @@ struct LocalOnlyFooter: View {
     }
 }
 
+/// The Saving mark: an account day not yet saved to the account. One small
+/// symbol with a short label; tapping it shows why, with no buttons.
+struct SavingMark: View {
+    let detail: String
+    let identifier: String
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: GDSpacing.small) {
+            Button { expanded.toggle() } label: {
+                Label(SyncCopy.savingLabel, systemImage: "arrow.triangle.2.circlepath")
+                    .font(GDFont.sectionLabel)
+                    .foregroundStyle(GDColor.mutedForeground)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(SyncCopy.savingVoiceOver)
+            .accessibilityHint(expanded ? "" : detail)
+            .accessibilityIdentifier(identifier)
+            if expanded {
+                Text(detail)
+                    .font(GDFont.sectionLabel)
+                    .foregroundStyle(GDColor.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier(identifier + "Detail")
+            }
+        }
+    }
+}
+
 /// Shown instead of journal content whenever the store isn't open. Never an
 /// empty journal.
 struct JournalUnavailableView: View {

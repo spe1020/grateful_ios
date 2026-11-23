@@ -25,6 +25,21 @@ enum SyncCopy {
     /// Settings → Account while the account's own relay list has no write relay (§1).
     static let noWriteRelays = "Your reflections aren't being saved to your account. Your Nostr account doesn't list anywhere to save them. They're kept on this iPhone. To start saving, add a relay for writing in the app you use to manage your Nostr account."
 
+    /// The Saving mark (flows doc, "Incomplete sync: user experience").
+    static let savingLabel = "Saving to your account"
+    static let savingVoiceOver = "Not saved to your account yet"
+    static let savingDetail = "This reflection hasn't finished saving to your account. It's kept on this iPhone, and we'll keep trying."
+    /// The mark's tap text while the account lists no write relay (§1).
+    static let savingDetailNoWriteRelays = "This reflection is kept on this iPhone. It can't be saved to your account until your Nostr account lists somewhere to save it. See Settings → Account."
+    /// Settings → Account after 7 days in Saving.
+    static func longSaving(_ n: Int) -> String {
+        n == 1 ? "1 reflection hasn't finished saving to your account yet. We'll keep trying."
+            : "\(n) reflections haven't finished saving to your account yet. We'll keep trying."
+    }
+    static let tryNow = "Try now"
+    /// Spec B: the read before publishing didn't complete.
+    static let couldNotReach = "We couldn't reach your journal yet. Your reflections are still on this iPhone."
+
     /// "November 20" for a YYYY-MM-DD day, in the user's language. Gregorian,
     /// never Calendar.current, so the day isn't shifted by another calendar.
     static func monthDay(_ dateString: String) -> String {

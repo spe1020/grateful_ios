@@ -27,6 +27,23 @@ final class SyncService {
         case noWriteRelays
     }
     private(set) var publishDeferral: PublishDeferral?
+
+    /// The Saving mark's tap text: different while the account lists
+    /// nowhere to save, since "we'll keep trying" would be false (§1).
+    static func savingDetail(_ sync: SyncService, text: String = "", isToday: Bool = false) -> String {
+        if sync.relays?.write?.isEmpty == true { return SyncCopy.savingDetailNoWriteRelays }
+        // §8: a day too long to save is never sent; don't say we'll keep trying.
+        if ConflictReview.isTooLong(text) { return ConflictCopy.dayLine(.tooLong(isToday: isToday)) }
+        return SyncCopy.savingDetail
+    }
+
+    /// Runs a read-then-publish pass for the connected account (set by the
+    /// app). Used by Try now and after conflict choices.
+    var runner: (() -> Void)?
+    func tryNow() { runner?() }
+
+    /// The last read didn't complete (spec B): nothing was published.
+    var couldNotReach: Bool { status == .failed || publishDeferral == .relayListUnknown }
     private(set) var lastPublish: PublishPass.Summary?
 
     private let fetcher: RelayFetcher

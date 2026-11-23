@@ -7,6 +7,7 @@ struct ConflictReviewView: View {
     let review: ConflictReview
     /// Called after Done, Keep both for all, or Not now.
     let onClose: () -> Void
+    @Environment(SyncService.self) private var sync
     @State private var days = ConflictReview.Days()
     @State private var choices: [String: ConflictReview.Choice] = [:]
     @State private var failed = false
@@ -77,13 +78,19 @@ struct ConflictReviewView: View {
 
     private func done() {
         let all = Dictionary(uniqueKeysWithValues: days.items.map { ($0.dateString, choices[$0.dateString] ?? $0.defaultChoice) })
-        do { try review.apply(all); onClose() } catch { failed = true }
+        do {
+            try review.apply(all)
+            // The kept days are published next (fetch first).
+            sync.tryNow()
+            onClose()
+        } catch { failed = true }
     }
 
     private func keepBothForAll() {
         do {
             let kept = try review.keepBothForAll()
             try review.saveKeptBothNotice(kept)
+            sync.tryNow()
             // §7–§9: rows Keep both for all doesn't touch keep the screen open.
             load()
             if days.items.isEmpty { onClose() }
