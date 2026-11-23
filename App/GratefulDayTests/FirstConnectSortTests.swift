@@ -152,4 +152,53 @@ final class FirstConnectSortTests: XCTestCase {
         XCTAssertTrue(m.isPrivate, "private wins")
         XCTAssertEqual(EntryNotes.split(m.notesText), ["public, edited here", "private, as a guest"])
     }
+
+    /// Audit #17 H1: a private guest note merged into a public account day
+    /// the person edited after connecting stays private.
+    func testPrivateGuestNoteIntoEditedPublicDayStaysPrivate() throws {
+        let pub = try DailyEntry.template(day: day("2026-11-20"), notes: ["public on web"]).signed(privateKey: secret, createdAt: 100)
+        try guest("2026-11-20", "my private guest note")          // guest rows default private
+        try importRemote([pub])                                    // owner row, public, synced
+        let m = try mine("2026-11-20")
+        XCTAssertFalse(m.isPrivate)
+        // The editor now prefers the owner row: the person edits it before Continue.
+        m.notesText = EntryNotes.join(["public on web", "edited after connecting"])
+        m.syncStateRaw = SyncState.localOnly.rawValue
+        try context.save()
+        try sort.run()
+        let after = try mine("2026-11-20")
+        XCTAssertTrue(EntryNotes.split(after.notesText).contains("my private guest note"))
+        XCTAssertTrue(after.isPrivate, "private guest text is never published in a public event")
+    }
+
+    /// Audit #17 M1: a day deleted under the account stays deleted; the
+    /// guest text goes to Set aside.
+    func testDeletedAccountDayStaysDeletedAndGuestTextIsSetAside() throws {
+        let e = try remote("2026-11-21", "account text", at: 100)
+        try guest("2026-11-21", "hidden guest text")
+        try importRemote([e])
+        let m = try mine("2026-11-21")
+        m.notesText = ""; m.deletedAt = t0; m.syncStateRaw = SyncState.localOnly.rawValue
+        try context.save()
+        try sort.run()
+        XCTAssertNotNil(try mine("2026-11-21").deletedAt, "the person's delete stands")
+        XCTAssertEqual(try mine("2026-11-21").notesText, "")
+        let aside = try JournalRepository(context: context, activeOwner: owner).setAsideVersions()
+        XCTAssertEqual(aside.map(\.notesText), ["hidden guest text"])
+        XCTAssertEqual(aside.map(\.reason), [.writtenBeforeConnectingDeleted])
+        XCTAssertEqual(ConflictCopy.setAsideReason(.writtenBeforeConnectingDeleted),
+                       "Written before you connected your account. You'd deleted this day, so it wasn't put back.")
+        // §12: nowhere else. No conflict row, no day-view line, no Today line.
+        XCTAssertTrue(try review.load().items.isEmpty)
+        XCTAssertNil(try review.dayLine("2026-11-21", isToday: true))
+        let repo = JournalRepository(context: context, activeOwner: owner)
+        XCTAssertTrue(try repo.dayLineSetAsideVersions("2026-11-21").isEmpty)
+        XCTAssertTrue(try repo.surfacedEarlierVersions().isEmpty, "no Today line")
+        // Never purged: still there after another pass and a later sort.
+        try sort.run()
+        XCTAssertEqual(try JournalRepository(context: context, activeOwner: owner).setAsideVersions().map(\.notesText),
+                       ["hidden guest text"])
+        XCTAssertNil(try context.fetch(FetchDescriptor<OutboxEvent>()).first { $0.dateString == "2026-11-21" && $0.kind == DailyEntry.kind },
+                     "nothing is published for it")
+    }
 }

@@ -338,7 +338,7 @@ struct DayDetailView: View {
                 // §5: a blocked day with pending edits shows the blocked line too.
                 if days.blocked.contains(where: { $0.dateString == dateString }) { blocked = true }
             }
-            earlierIds = Set(try repository.setAsideVersions().filter { $0.dateString == dateString }.map(\.id))
+            earlierIds = Set(try repository.dayLineSetAsideVersions(dateString).map(\.id))
             failed = false
         } catch {
             failed = true

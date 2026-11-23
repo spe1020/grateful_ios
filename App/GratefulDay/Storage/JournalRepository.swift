@@ -223,6 +223,12 @@ struct JournalRepository {
         return all.filter { $0.ownerPubkey == activeOwner && $0.reason.isSetAside }
     }
 
+    /// The day view's "An earlier version… is in Set aside" line: §12 items
+    /// are in Set aside only, never on the day (Prep).
+    func dayLineSetAsideVersions(_ dateString: String) throws -> [EarlierVersion] {
+        try setAsideVersions().filter { $0.dateString == dateString && $0.reason != .writtenBeforeConnectingDeleted }
+    }
+
     /// Hide the Today line for these versions. Nothing is deleted.
     func dismissEarlierVersions(_ ids: [UUID]) throws {
         for v in try setAsideVersions() where ids.contains(v.id) { v.dismissed = true }

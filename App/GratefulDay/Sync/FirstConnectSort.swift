@@ -88,6 +88,14 @@ struct FirstConnectSort {
                 mine.syncStateRaw = SyncState.conflict.rawValue
                 mine.updatedAt = now()
                 summary.conflicts += 1
+            case .localOnly where mine.deletedAt != nil, .conflict where mine.deletedAt != nil:
+                // The person deleted this day under the account. Their delete
+                // stands: the guest text, which they couldn't see once the
+                // account's day existed, goes to Set aside (Audit #17 M1).
+                context.insert(EarlierVersion(ownerPubkey: owner, dateString: mine.dateString, notesText: text,
+                                              reason: .writtenBeforeConnectingDeleted, eventId: nil, surfaced: true,
+                                              isPrivate: guest.isPrivate, now: now()))
+                summary.same += 1
             case .localOnly, .conflict:
                 // Already this account's, with writing of its own: keep both.
                 if EntryNotes.split(mine.notesText) != EntryNotes.split(text) {
@@ -95,7 +103,6 @@ struct FirstConnectSort {
                     mine.notesText = EntryNotes.join(notes + EntryNotes.split(text).filter { !notes.contains($0) })
                     // Private wins on a combined day (spec B §4; Prep #17 G1).
                     mine.isPrivate = mine.isPrivate || guest.isPrivate
-                    mine.deletedAt = nil
                     mine.updatedAt = now()
                 }
                 summary.same += 1

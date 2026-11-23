@@ -126,6 +126,9 @@ enum ConflictCopy {
     static let tooLongPastDay = "This reflection is too long to save to your account. It's kept on this iPhone only."
     static let tooLongToday = "This reflection is too long to save to your account. It's kept on this iPhone. Shorten it to save it."
 
+    /// §12: Set aside reason only; no row, day-view line or Today line.
+    static let writtenBeforeConnectingDeleted = "Written before you connected your account. You'd deleted this day, so it wasn't put back."
+
     /// The day view's line for a day (§5–§9, "Coming back later").
     static func dayLine(_ line: ConflictReview.DayLine) -> String {
         switch line {
@@ -142,6 +145,7 @@ enum ConflictCopy {
         case .notKept: return notKeptReason
         case .deletedFromAccount: return deletedFromAccount
         case .deletedHere: return deletedHere
+        case .writtenBeforeConnectingDeleted: return writtenBeforeConnectingDeleted
         default: return SyncCopy.replacedReason
         }
     }

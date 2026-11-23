@@ -44,7 +44,12 @@ enum EarlierVersionReason: String, Codable, Sendable {
     /// Set aside (§9, Delete it everywhere): the account's text for a day
     /// deleted on this iPhone.
     case deletedHere
+    /// Set aside (§12): written here before connecting, for a day the person
+    /// had deleted under the account. Kept, not put back; no other line.
+    case writtenBeforeConnectingDeleted
 
     /// Shown in Set aside (P22, M6).
-    var isSetAside: Bool { [.replacedByRemote, .notKept, .deletedFromAccount, .deletedHere].contains(self) }
+    var isSetAside: Bool {
+        [.replacedByRemote, .notKept, .deletedFromAccount, .deletedHere, .writtenBeforeConnectingDeleted].contains(self)
+    }
 }

@@ -111,7 +111,7 @@ struct TodayView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("today.conflict")
-                        } else if let kept = try? repo.setAsideVersions().filter({ $0.dateString == day.dateString }), !kept.isEmpty {
+                        } else if let kept = try? repo.dayLineSetAsideVersions(day.dateString), !kept.isEmpty {
                             EarlierVersionLine { setAside = SetAsideFilter(ids: Set(kept.map(\.id))) }
                                 .accessibilityIdentifier("today.earlierVersion")
                         }
