@@ -302,7 +302,12 @@ final class AppShellUITests: XCTestCase {
         }
         XCTAssertTrue(app.staticTexts["disclosure.heading"].waitForExistence(timeout: 15), "the spec A sheet")
         app.buttons["disclosure.notNow"].tap()
+        // Not now: nothing is published (the empty relays reject every event
+        // anyway, and UITestRelaysTests checks that no rejection counts as an
+        // acknowledgement), and the screen underneath can be used again.
         XCTAssertTrue(app.buttons["account.signOut"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["account.signOut"].isHittable, "the sheet is gone")
+        XCTAssertTrue(app.tabBars.buttons["Today"].isHittable)
         app.buttons["account.signOut"].tap()
         app.buttons["signOut.confirm"].tap()
         XCTAssertTrue(app.buttons["account.usedBefore"].waitForExistence(timeout: 5), "signed out")
