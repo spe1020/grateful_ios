@@ -38,7 +38,11 @@ final class SyncService {
     /// Runs a read-then-publish pass for the connected account (set by the
     /// app). Used by Try now and after conflict choices.
     var runner: (() -> Void)?
-    func tryNow() { runner?() }
+    /// Try now dials every relay again (Audit #22 M1): the person asked.
+    func tryNow() {
+        unreachableSince = [:]
+        runner?()
+    }
 
     /// The last read didn't complete (spec B): nothing was published.
     var couldNotReach: Bool { status == .failed || publishDeferral == .relayListUnknown }
@@ -288,8 +292,13 @@ final class SyncService {
         let skipped = unreachable.all.subtracting(remembered).sorted { $0.absoluteString < $1.absoluteString }
         if !skipped.isEmpty { SyncLog.note("never connected, dialed once", SyncLog.hosts(skipped)) }
         // Remember them for later passes, unless this pass was stopped or the
-        // account changed (then nothing it learned is kept).
-        if !Task.isCancelled, isCurrent() {
+        // account changed (then nothing it learned is kept), or no relay at
+        // all opened: then it's the phone's network that stalled, not those
+        // relays, and remembering them would shut out every relay after the
+        // network is back (Audit #22 M1).
+        let networkWorked = !unreachable.opened.isEmpty
+        if !skipped.isEmpty, !networkWorked { SyncLog.note("not remembered", "no relay opened in this pass") }
+        if !Task.isCancelled, isCurrent(), networkWorked {
             let at = now()
             unreachableSince = unreachableSince.filter { at.timeIntervalSince($0.value) < unreachableMemory }
             for url in skipped { unreachableSince[url] = at }

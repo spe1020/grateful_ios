@@ -201,6 +201,76 @@ final class RelayMemoryTests: XCTestCase {
         XCTAssertNotEqual(try row("2026-11-20").syncState, .synced)
     }
 
+    /// Audit #22 M1 / Chief P46: the phone's own network stalls (no relay
+    /// opens at all), then recovers. Nothing is remembered, so the next pass
+    /// dials every relay and reads the account.
+    func testStalledNetworkThenRecoveryDialsEveryRelayAgain() async throws {
+        executionTimeAllowance = 60
+        final class Switch: @unchecked Sendable { var stalled = true }
+        let net = Switch()
+        let stalled = RelaySet.defaultRead.map { FakeRelay($0.host!, behavior: .neverConnects) }
+        let healthy = RelaySet.defaultRead.map { FakeRelay($0.host!) }
+        struct Switching: RelayTransport {
+            let net: Switch, stalled: FakeTransport, healthy: FakeTransport
+            func connect(_ url: URL) async throws -> RelayConnection {
+                try await (net.stalled ? stalled : healthy).connect(url)
+            }
+        }
+        let map = { (r: [FakeRelay]) in FakeTransport(relays: Dictionary(uniqueKeysWithValues: r.map { ($0.url, $0) })) }
+        let transport = Switching(net: net, stalled: map(stalled), healthy: map(healthy))
+        var fetcher = RelayFetcher(transport: transport); fetcher.pageTimeout = .milliseconds(300)
+        var publisher = RelayPublisher(transport: transport); publisher.timeout = .milliseconds(300)
+        let sync = SyncService(fetcher: fetcher, publisher: publisher)
+        let clock = clock
+        sync.now = { clock.value }
+        await pass(sync)
+        XCTAssertTrue(sync.couldNotReach)
+        XCTAssertEqual(sync.rememberedUnreachable(), [], "no relay opened: the network stalled, nothing remembered")
+
+        net.stalled = false
+        clock.value += 60
+        await pass(sync)
+        XCTAssertTrue(healthy.allSatisfy { $0.connectCount >= 1 }, "every relay dialed after the network is back")
+        XCTAssertFalse(sync.couldNotReach)
+        XCTAssertNotEqual(sync.publishDeferral, .relayListUnknown)
+    }
+
+    /// Chief P46: Try now (and a conflict choice, which calls it) dials a
+    /// remembered relay again.
+    func testTryNowDialsARememberedRelay() async throws {
+        executionTimeAllowance = 60
+        let relays = defaults()
+        let bandRelay = relays.first { $0.url == band }!
+        let sync = service(relays)
+        let context = context, owner = owner, secret = secret
+        sync.runner = { [unowned sync] in sync.start(owner: owner, secret: secret, context: context) { true } }
+        await pass(sync)
+        XCTAssertEqual(sync.rememberedUnreachable(), [band])
+        clock.value += 60
+        sync.tryNow()
+        XCTAssertEqual(sync.rememberedUnreachable(), [], "cleared before the pass")
+        let started = Date()
+        while bandRelay.connectCount < 2, Date().timeIntervalSince(started) < 5 { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(bandRelay.connectCount, 2, "dialed again on Try now")
+    }
+
+    /// Chief P46: an account change clears the memory. The app calls
+    /// `sync.reset()` on every change of `account.activeOwner`
+    /// (GratefulDayApp, `.onChange(of: account.activeOwner)`), and on a
+    /// replaced store; a pass for the new account then dials every relay.
+    func testAccountChangeClearsTheMemory() async throws {
+        executionTimeAllowance = 60
+        let relays = defaults()
+        let bandRelay = relays.first { $0.url == band }!
+        let sync = service(relays)
+        await pass(sync)
+        XCTAssertEqual(sync.rememberedUnreachable(), [band])
+        sync.reset()   // what the app does when the account changes
+        let other = try NostrKeys.generatePrivateKey()
+        await sync.run(owner: KeyVault.pubkeyHex(for: other)!, secret: other, context: context)
+        XCTAssertEqual(bandRelay.connectCount, 2, "the new account's pass dials it")
+    }
+
     // MARK: - Journal and settings read in parallel
 
     /// Two queries on one pass transport at once: each keeps its own events
