@@ -63,6 +63,9 @@ final class PublishTests: XCTestCase {
     /// URLSession gave up (60 s). It is timed out with the rest, and a
     /// timeout is never an acknowledgement.
     func testWriteRelayThatNeverConnectsTimesOutAndIsNeverAnAcknowledgement() async throws {
+        // Audit #20 L1: with the fix reverted this hangs; fail it instead
+        // (the scheme turns test time limits on; XCTest rounds up to 1 min).
+        executionTimeAllowance = 60
         let event = try signed("2026-11-20", "hello", at: 1_000)
         let json = String(decoding: try JSONEncoder().encode(event), as: UTF8.self)
         let good = FakeRelay("a"), hung = FakeRelay("b", behavior: .neverConnects)

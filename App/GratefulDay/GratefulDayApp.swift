@@ -118,6 +118,9 @@ struct GratefulDayApp: App {
     /// Read the connected account's journal, then publish once spec A was
     /// accepted (M5b).
     private func readFromRelays() {
+        // Audit #20 I1: no pass starts outside the foreground, whoever asks
+        // (an account connecting, Try now, a conflict choice, a save).
+        guard UIApplication.shared.applicationState != .background else { return }
         guard let context = store.container?.mainContext, let key = account.connectedKey() else { return }
         let store = store, account = account, owner = key.pubkey
         sync.start(owner: owner, secret: key.secret, context: context) {

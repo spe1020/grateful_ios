@@ -2,8 +2,6 @@ import SwiftUI
 import UIKit
 import NostrCore
 
-/// Settings → Account (Prep's F1–F8). No network: connecting stops once the
-/// key is stored (and backed up, if chosen). Publishing is M5b.
 /// Whether one of the Account sheets (restore, import, backup offer, sign
 /// out, remove) is open.
 struct AccountFlowOpenKey: PreferenceKey {
@@ -11,6 +9,8 @@ struct AccountFlowOpenKey: PreferenceKey {
     static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
 }
 
+/// Settings → Account (Prep's F1–F8). No network: connecting stops once the
+/// key is stored (and backed up, if chosen). Publishing is M5b.
 struct AccountView: View {
     @Environment(AccountModel.self) private var account
     @Environment(JournalStore.self) private var store

@@ -444,6 +444,9 @@ final class PublishPassTests: XCTestCase {
     /// bootstrap relay never finishes connecting: the pass still ends, at the
     /// disclosure, with nothing sent.
     func testFirstConnectReachesTheDisclosureDespiteARelayThatNeverConnects() async throws {
+        // Audit #20 L1: with the fix reverted this hangs; fail it instead
+        // (the scheme turns test time limits on; XCTest rounds up to 1 min).
+        executionTimeAllowance = 60
         try entry("2026-11-20", "private until told")
         let relays = RelaySet.defaultRead.enumerated().map { FakeRelay($1.host!, behavior: $0 == 1 ? .neverConnects : .normal) }
         let sync = service(relays)
@@ -462,6 +465,9 @@ final class PublishPassTests: XCTestCase {
     /// locked. The relay is now dialed once in the pass, and the day is saved
     /// to the two write relays that answered and acknowledged.
     func testPublishesDespiteADefaultRelayThatNeverConnects() async throws {
+        // Audit #20 L1: with the fix reverted this hangs; fail it instead
+        // (the scheme turns test time limits on; XCTest rounds up to 1 min).
+        executionTimeAllowance = 60
         try entry("2026-11-20", "saved in one pass")
         try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
         // The defaults as on the iPhone: nostr.band never connects, damus
@@ -492,6 +498,9 @@ final class PublishPassTests: XCTestCase {
     /// The skipped relay never counts as having answered: when it is one of
     /// only two write relays that can be reached, nothing is sent.
     func testRelayDialedOnceStillNeverCountsAsAnswered() async throws {
+        // Audit #20 L1: with the fix reverted this hangs; fail it instead
+        // (the scheme turns test time limits on; XCTest rounds up to 1 min).
+        executionTimeAllowance = 60
         try entry("2026-11-20", "stays here")
         try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
         let list = try UnsignedEvent(kind: 10002, tags: [["r", "wss://nos.lol"], ["r", "wss://relay.nostr.band"]], content: "")
@@ -512,6 +521,9 @@ final class PublishPassTests: XCTestCase {
     /// list: the write set stays unknown (never the defaults), even with the
     /// disclosure accepted, and Account says it couldn't reach the journal.
     func testTooFewBootstrapAnswersNeverPublishToDefaults() async throws {
+        // Audit #20 L1: with the fix reverted this hangs; fail it instead
+        // (the scheme turns test time limits on; XCTest rounds up to 1 min).
+        executionTimeAllowance = 60
         try entry("2026-11-20", "stays here")
         try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
         let relays = RelaySet.defaultRead.enumerated().map { FakeRelay($1.host!, behavior: $0 == 0 ? .normal : .neverConnects) }
@@ -527,6 +539,9 @@ final class PublishPassTests: XCTestCase {
     /// straight away. That start must not be swallowed by the pass it just
     /// cancelled: it runs once the old one has closed its sockets.
     func testStartRightAfterResetRunsANewPass() async throws {
+        // Audit #20 L1: with the fix reverted this hangs; fail it instead
+        // (the scheme turns test time limits on; XCTest rounds up to 1 min).
+        executionTimeAllowance = 60
         try entry("2026-11-20", "private until told")
         let relays = RelaySet.defaultRead.map { FakeRelay($0.host!) }
         let sync = service(relays)
