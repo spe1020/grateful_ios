@@ -128,6 +128,12 @@ struct TodayView: View {
                     if let editor {
                         TodayEditorSection(model: editor)
                             .accessibilitySortPriority(1)
+                        // Chief P42: a day public on the account says so while it's edited.
+                        if store.container.map({ JournalRepository(context: $0.mainContext, activeOwner: account.activeOwner)
+                            .showsPublicLabel(day.dateString) }) == true {
+                            PublicDayLabel(identifier: "today.public")
+                                .accessibilitySortPriority(1)
+                        }
                         if editor.showReminderOffer, !reminder.isOn {
                             ReminderOffer(onChoose: {
                                 editor.dismissReminderOffer()
