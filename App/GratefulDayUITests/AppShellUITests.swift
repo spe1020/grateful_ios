@@ -239,6 +239,7 @@ final class AppShellUITests: XCTestCase {
         let editor = app.textViews["today.editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 10))
         clear(app)
+        TodayCardUITests.showWisdom(app)
         XCTAssertTrue(app.staticTexts["wisdom.passage"].exists)
         let question = app.descendants(matching: .any)["wisdom.question"].label
         XCTAssertFalse(question.isEmpty)

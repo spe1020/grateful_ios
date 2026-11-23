@@ -28,6 +28,8 @@ struct TodayView: View {
     /// launch once dismissed, and returns on the next while choices are open.
     @State private var showingConflicts = false
     @State private var conflictLineDismissed = false
+    /// The Today card's page, "YYYY-MM-DD|pageId" (device-local, not synced).
+    @AppStorage(TodayCardSelection.defaultsKey) private var storedCardPage = ""
 
     var body: some View {
         NavigationStack {
@@ -39,7 +41,7 @@ struct TodayView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("today.date")
-                        // VoiceOver order: date, passage, author, question, editor.
+                        // VoiceOver order: date, Today card, question, editor.
                         .accessibilitySortPriority(5)
 
                     if let editor, editor.showWelcomeBack {
@@ -50,11 +52,10 @@ struct TodayView: View {
                             .accessibilitySortPriority(4)
                     }
 
-                    if let wisdom = DailyWisdom.item(for: day) {
-                        WisdomCard(item: wisdom, isPinned: pinnedDay == day.dateString) {
-                            pinnedDay = day.dateString
-                        }
-                        .accessibilitySortPriority(3)
+                    let pages = cardPages
+                    if !pages.isEmpty {
+                        TodayCard(pages: pages, selection: cardSelection(pageIds: pages.map(\.id)))
+                            .accessibilitySortPriority(3)
                     }
 
                     if let wisdom = DailyWisdom.item(for: day), pinnedDay == day.dateString, editor != nil {
@@ -257,6 +258,29 @@ struct TodayView: View {
         editor.dayChanged(to: now)
         // If saving to the old day failed, the editor stays on it, and so does Today.
         day = editor.day
+    }
+
+    /// The Today card's pages, in fixed order: Wisdom, then Affirmation.
+    private var cardPages: [TodayCardPage] {
+        var pages: [TodayCardPage] = []
+        if let wisdom = DailyWisdom.item(for: day) {
+            pages.append(TodayCardPage(id: "wisdom", label: TodayCardCopy.wisdomLabel, content: AnyView(
+                WisdomCard(item: wisdom, isPinned: pinnedDay == day.dateString) { pinnedDay = day.dateString })))
+        }
+        if let affirmation = DailyAffirmation.text(for: day) {
+            pages.append(TodayCardPage(id: "affirmation", label: TodayCardCopy.affirmationLabel,
+                                       content: AnyView(AffirmationPage(text: affirmation))))
+        }
+        return pages
+    }
+
+    private func cardSelection(pageIds: [String]) -> Binding<String?> {
+        Binding(
+            get: { TodayCardSelection.page(stored: storedCardPage, today: day.dateString, pageIds: pageIds) },
+            set: { id in
+                guard let id else { return }
+                storedCardPage = TodayCardSelection.stored(today: day.dateString, pageId: id)
+            })
     }
 
     /// The date in the user's locale, e.g. "Saturday, November 21".
