@@ -475,12 +475,10 @@ final class PublishPassTests: XCTestCase {
         }
         let byHost = Dictionary(uniqueKeysWithValues: relays.map { ($0.url.host!, $0) })
         let sync = service(relays)
-        let started = Date()
         await sync.run(owner: owner, secret: secret, context: context)
-        // One 0.3 s timeout for nostr.band, not one for each of the
-        // pass's seven reads.
-        XCTAssertLessThan(Date().timeIntervalSince(started), 1.2, "the relay that never connects is waited on once")
-        XCTAssertEqual(byHost["relay.nostr.band"]!.connectCount, 1)
+        // Waited on once, not once for each of the pass's seven reads.
+        // Counted, not timed: a wall-clock bound fails on a slow CI runner.
+        XCTAssertEqual(byHost["relay.nostr.band"]!.connectCount, 1, "the relay that never connects is dialed once")
         XCTAssertEqual(sync.lastPublish?.sent, 1)
         XCTAssertEqual(sync.lastPublish?.synced, 1)
         XCTAssertEqual(try row("2026-11-20").syncState, .synced)

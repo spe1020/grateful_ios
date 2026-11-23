@@ -198,10 +198,9 @@ final class RelayFetchTests: XCTestCase {
         f.transport = PassTransport(base: base, unreachable: .init())
         let first = await f.fetch(filter(), from: urls)
         XCTAssertEqual(first.outcomes[hung.url], .timedOut)
-        let started = Date()
         let second = await f.fetch(filter(), from: [good.url, hung.url])
-        XCTAssertLessThan(Date().timeIntervalSince(started), 0.25, "not waited on again")
         XCTAssertEqual(second.outcomes[good.url], .answered)
+        // `.failed("connect")`, not `.timedOut`: it wasn't waited on again.
         XCTAssertEqual(second.outcomes[hung.url], .failed("connect"), "unknown, never read as empty")
         XCTAssertFalse(second.allAnswered([good.url, hung.url]))
         XCTAssertEqual(hung.connectCount, 1, "dialed once in the pass")
