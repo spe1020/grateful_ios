@@ -16,7 +16,8 @@ struct ConflictReviewView: View {
             if !days.items.isEmpty {
                 Section {
                     VStack(alignment: .leading, spacing: GDSpacing.small) {
-                        Text(ConflictCopy.heading(dates: days.items.map(\.dateString), afterSaving: days.allAfterSaving))
+                        Text(ConflictCopy.heading(dates: days.items.map(\.dateString), afterSaving: days.allAfterSaving,
+                                                  allKind: days.allKind))
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(GDColor.foreground)
                             .fixedSize(horizontal: false, vertical: true)
@@ -26,15 +27,17 @@ struct ConflictReviewView: View {
                             .font(GDFont.sectionLabel)
                             .foregroundStyle(GDColor.mutedForeground)
                             .fixedSize(horizontal: false, vertical: true)
-                        Button(ConflictCopy.keepBothForAll) { keepBothForAll() }
-                            .frame(minHeight: 44)
-                            .accessibilityIdentifier("conflict.keepBothForAll")
+                        if days.showsKeepBothForAll {
+                            Button(ConflictCopy.keepBothForAll) { keepBothForAll() }
+                                .frame(minHeight: 44)
+                                .accessibilityIdentifier("conflict.keepBothForAll")
+                        }
                     }
                 }
                 ForEach(days.items) { item in
                     Section {
                         ConflictRow(item: item, choice: Binding(
-                            get: { choices[item.dateString] ?? .keepBoth },
+                            get: { choices[item.dateString] ?? item.defaultChoice },
                             set: { choices[item.dateString] = $0 }))
                     }
                 }
@@ -73,7 +76,7 @@ struct ConflictReviewView: View {
     }
 
     private func done() {
-        let all = Dictionary(uniqueKeysWithValues: days.items.map { ($0.dateString, choices[$0.dateString] ?? .keepBoth) })
+        let all = Dictionary(uniqueKeysWithValues: days.items.map { ($0.dateString, choices[$0.dateString] ?? $0.defaultChoice) })
         do { try review.apply(all); onClose() } catch { failed = true }
     }
 
@@ -81,7 +84,9 @@ struct ConflictReviewView: View {
         do {
             let kept = try review.keepBothForAll()
             try review.saveKeptBothNotice(kept)
-            onClose()
+            // §7–§9: rows Keep both for all doesn't touch keep the screen open.
+            load()
+            if days.items.isEmpty { onClose() }
         } catch { failed = true }
     }
 }
@@ -99,12 +104,16 @@ private struct ConflictRow: View {
                     .foregroundStyle(GDColor.foreground)
                     .accessibilityAddTraits(.isHeader)
             }
-            LabelledText(label: ConflictCopy.yourAccount, text: item.accountText, identifier: "conflict.account")
-            LabelledText(label: ConflictCopy.thisIPhone, text: item.iPhoneText, identifier: "conflict.iPhone")
-            Picker(ConflictCopy.keepBoth, selection: $choice) {
-                Text(ConflictCopy.keepBoth).tag(ConflictReview.Choice.keepBoth)
-                Text(ConflictCopy.keepThisIPhone).tag(ConflictReview.Choice.keepThisIPhone)
-                Text(ConflictCopy.keepAccount).tag(ConflictReview.Choice.keepAccount)
+            LabelledText(label: ConflictCopy.yourAccount,
+                         text: item.kind == .deletedFromAccount ? ConflictCopy.deletedFromAccount : item.accountText,
+                         identifier: "conflict.account")
+            LabelledText(label: ConflictCopy.thisIPhone,
+                         text: item.kind == .deletedHere ? ConflictCopy.deletedHere : item.iPhoneText,
+                         identifier: "conflict.iPhone")
+            Picker(Self.title(item.defaultChoice), selection: $choice) {
+                ForEach(item.choices, id: \.self) { c in
+                    Text(Self.title(c)).tag(c)
+                }
             }
             .pickerStyle(.inline)
             .labelsHidden()
@@ -114,6 +123,13 @@ private struct ConflictRow: View {
                 .foregroundStyle(GDColor.mutedForeground)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("conflict.choiceLine")
+            if choice == .keepBoth, item.keepBothTooLong {
+                Text(ConflictCopy.keepBothTooLong)
+                    .font(GDFont.sectionLabel)
+                    .foregroundStyle(GDColor.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("conflict.tooLong")
+            }
             if choice == .keepBoth, item.keepBothBecomesPrivate {
                 Text(ConflictCopy.privateWins)
                     .font(GDFont.sectionLabel)
@@ -125,11 +141,25 @@ private struct ConflictRow: View {
         .padding(.vertical, GDSpacing.small)
     }
 
-    private var line: String {
+    static func title(_ choice: ConflictReview.Choice) -> String {
         switch choice {
-        case .keepBoth: return ConflictCopy.keepBothLine
-        case .keepThisIPhone: return ConflictCopy.keepThisIPhoneLine
-        case .keepAccount: return ConflictCopy.keepAccountLine
+        case .keepBoth: return ConflictCopy.keepBoth
+        case .keepThisIPhone: return ConflictCopy.keepThisIPhone
+        case .keepAccount: return ConflictCopy.keepAccount
+        case .letItStayDeleted: return ConflictCopy.letItStayDeleted
+        case .deleteEverywhere: return ConflictCopy.deleteEverywhere
+        }
+    }
+
+    private var line: String {
+        switch (item.kind, choice) {
+        case (.deletedFromAccount, .keepThisIPhone): return ConflictCopy.keepThisIPhoneRestoresLine
+        case (.deletedHere, .keepAccount): return ConflictCopy.keepAccountRestoresLine
+        case (_, .keepBoth): return ConflictCopy.keepBothLine
+        case (_, .keepThisIPhone): return ConflictCopy.keepThisIPhoneLine
+        case (_, .keepAccount): return ConflictCopy.keepAccountLine
+        case (_, .letItStayDeleted): return ConflictCopy.letItStayDeletedLine
+        case (_, .deleteEverywhere): return ConflictCopy.deleteEverywhereLine
         }
     }
 }

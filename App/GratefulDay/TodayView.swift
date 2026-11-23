@@ -92,9 +92,17 @@ struct TodayView: View {
                             }
                         }
                         if let owner = account.activeOwner,
-                           (try? ConflictReview(context: context, owner: owner).listsDay(day.dateString)) == true {
+                           let line = try? ConflictReview(context: context, owner: owner).dayLine(day.dateString, isToday: true),
+                           !line.opensScreen {
+                            Text(ConflictCopy.dayLine(line))
+                                .font(GDFont.sectionLabel)
+                                .foregroundStyle(GDColor.foreground)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("today.tooLong")
+                        } else if let owner = account.activeOwner,
+                           let line = try? ConflictReview(context: context, owner: owner).dayLine(day.dateString, isToday: true) {
                             Button { showingConflicts = true } label: {
-                                Text(SyncCopy.alsoChangedElsewhere)
+                                Text(ConflictCopy.dayLine(line))
                                     .font(GDFont.sectionLabel)
                                     .foregroundStyle(GDColor.foreground)
                                     .multilineTextAlignment(.leading)

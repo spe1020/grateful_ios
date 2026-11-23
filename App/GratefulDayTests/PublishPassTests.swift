@@ -682,7 +682,8 @@ final class PublishPassTests: XCTestCase {
         XCTAssertEqual(try row("2026-11-20").syncState, .conflict)
         XCTAssertEqual(try row("2026-11-20").notesText, "mine")
         let review = ConflictReview(context: context, owner: owner)
-        XCTAssertTrue(try review.load().items.isEmpty, "the deleted account text is never offered")
+        XCTAssertEqual(try review.load().items.map(\.kind), [.deletedFromAccount], "§10: a §7 row")
+        XCTAssertEqual(try review.load().items.map(\.accountText), [""], "the deleted account text is never offered")
         try review.apply(["2026-11-20": .keepAccount])
         XCTAssertEqual(try row("2026-11-20").syncState, .conflict, "never marked saved with deleted text")
     }

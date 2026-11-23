@@ -213,7 +213,7 @@ struct DayDetailView: View {
     @State private var blocked = false
     @State private var setAside: SetAsideFilter?
     /// M6: the day has a choice to make (opens the conflict screen).
-    @State private var inConflict = false
+    @State private var dayLine: ConflictReview.DayLine?
     @State private var showingConflicts = false
 
     var body: some View {
@@ -247,9 +247,15 @@ struct DayDetailView: View {
                             .textSelection(.enabled)
                     }
                     .accessibilityIdentifier("day.notes")
-                    if inConflict {
+                    if let dayLine, !dayLine.opensScreen {
+                        Text(ConflictCopy.dayLine(dayLine))
+                            .font(GDFont.sectionLabel)
+                            .foregroundStyle(GDColor.foreground)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("day.tooLong")
+                    } else if let dayLine {
                         Button { showingConflicts = true } label: {
-                            Text(SyncCopy.alsoChangedElsewhere)
+                            Text(ConflictCopy.dayLine(dayLine))
                                 .font(GDFont.sectionLabel)
                                 .foregroundStyle(GDColor.foreground)
                                 .multilineTextAlignment(.leading)
@@ -307,7 +313,9 @@ struct DayDetailView: View {
             blocked = try repository.isBlocked(dateString)
             if let owner = repository.activeOwner {
                 let days = try ConflictReview(context: repository.context, owner: owner).load()
-                inConflict = days.items.contains { $0.dateString == dateString }   // same rule as ConflictReview.listsDay
+                let today = JournalDay(containing: .now).day.dateString
+                dayLine = try ConflictReview(context: repository.context, owner: owner)
+                    .dayLine(dateString, isToday: today == dateString)
                 // §5: a blocked day with pending edits shows the blocked line too.
                 if days.blocked.contains(where: { $0.dateString == dateString }) { blocked = true }
             }

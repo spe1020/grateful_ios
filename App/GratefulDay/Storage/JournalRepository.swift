@@ -220,7 +220,7 @@ struct JournalRepository {
         let all = try context.fetch(FetchDescriptor<EarlierVersion>(
             predicate: #Predicate { $0.surfaced },
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))
-        return all.filter { $0.ownerPubkey == activeOwner && ($0.reason == .replacedByRemote || $0.reason == .notKept) }
+        return all.filter { $0.ownerPubkey == activeOwner && $0.reason.isSetAside }
     }
 
     /// Hide the Today line for these versions. Nothing is deleted.

@@ -22,7 +22,7 @@ struct SetAsideView: View {
                         .font(.headline)
                         .foregroundStyle(GDColor.foreground)
                         .accessibilityAddTraits(.isHeader)
-                    Text(item.reason == .notKept ? ConflictCopy.notKeptReason : SyncCopy.replacedReason)
+                    Text(ConflictCopy.setAsideReason(item.reason))
                         .font(GDFont.sectionLabel)
                         .foregroundStyle(GDColor.mutedForeground)
                     Text(item.notesText)

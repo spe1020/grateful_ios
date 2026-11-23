@@ -46,6 +46,22 @@ enum SyncCopy {
 /// screen"). Growth may tune wording only if every fact stays. Change only
 /// together with that document.
 enum ConflictCopy {
+    /// §7 or §9 when every row is that case; otherwise §1, or §6 when every
+    /// row came from the re-check after saving.
+    static func heading(dates: [String], afterSaving: Bool, allKind: ConflictReview.Kind?) -> String {
+        let one = dates.count == 1 ? dates.first.map(SyncCopy.monthDay) : nil
+        switch allKind {
+        case .deletedFromAccount?:
+            if let one { return "\(one) was deleted from your account, but you changed it on this iPhone." }
+            return "\(dates.count) days were deleted from your account, but you changed them on this iPhone."
+        case .deletedHere?:
+            if let one { return "You deleted \(one) here, but it was changed in your account." }
+            return "You deleted \(dates.count) days here, but they were changed in your account."
+        default:
+            return heading(dates: dates, afterSaving: afterSaving)
+        }
+    }
+
     /// §1, or §6 when every row came from the re-check after saving.
     static func heading(dates: [String], afterSaving: Bool) -> String {
         if dates.count == 1, let date = dates.first {
@@ -75,6 +91,45 @@ enum ConflictCopy {
 
     /// Set aside reason for a text that wasn't kept.
     static let notKeptReason = "You kept the other version of this day."
+
+    /// §7: deleted from the account, changed on this iPhone.
+    static let deletedFromAccount = "This day was deleted from your account."
+    static let letItStayDeleted = "Let it stay deleted"
+    static let keepThisIPhoneRestoresLine = "This day goes back to your account with what you wrote here."
+    static let letItStayDeletedLine = "What you wrote here goes to Set aside, and this day is removed from this iPhone."
+    static let deletedFromAccountDayLine = "This day was deleted from your account. What you wrote here is kept on this iPhone."
+
+    /// §9: deleted on this iPhone, changed in the account.
+    static let deletedHere = "You deleted this day here."
+    static let deleteEverywhere = "Delete it everywhere"
+    static let keepAccountRestoresLine = "This day comes back on this iPhone with your account's text."
+    static let deleteEverywhereLine = "Your account's text goes to Set aside on this iPhone, and this day is deleted from your account."
+    static let deletedHereDayLine = "You deleted this day here, but it was changed in your account. Choose what to keep."
+
+    /// §8: Keep both would be too long to save to the account.
+    static let keepBothTooLong = "Together these are too long to save to your account. If you keep both, this day stays on this iPhone only. To save it to your account, keep one instead."
+    static let tooLongPastDay = "This reflection is too long to save to your account. It's kept on this iPhone only."
+    static let tooLongToday = "This reflection is too long to save to your account. It's kept on this iPhone. Shorten it to save it."
+
+    /// The day view's line for a day (§5–§9, "Coming back later").
+    static func dayLine(_ line: ConflictReview.DayLine) -> String {
+        switch line {
+        case .alsoChangedElsewhere: return SyncCopy.alsoChangedElsewhere
+        case .deletedFromAccount: return deletedFromAccountDayLine
+        case .deletedHere: return deletedHereDayLine
+        case .tooLong(let isToday): return isToday ? tooLongToday : tooLongPastDay
+        }
+    }
+
+    /// The reason under a Set aside item.
+    static func setAsideReason(_ reason: EarlierVersionReason) -> String {
+        switch reason {
+        case .notKept: return notKeptReason
+        case .deletedFromAccount: return deletedFromAccount
+        case .deletedHere: return deletedHere
+        default: return SyncCopy.replacedReason
+        }
+    }
 
     /// Today line after Keep both for all, until dismissed.
     static func keptBoth(dates: [String], madePrivate: Bool) -> String {
