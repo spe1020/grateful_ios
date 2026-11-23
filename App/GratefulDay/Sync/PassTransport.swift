@@ -20,7 +20,10 @@ struct PassTransport: RelayTransport {
     /// and its sends.
     final class Unreachable: @unchecked Sendable {
         private let lock = NSLock()
-        private var urls: Set<URL> = []
+        private var urls: Set<URL>
+        /// Starts with relays already known not to open (remembered from an
+        /// earlier pass, `SyncService`): they aren't dialed at all.
+        init(_ known: Set<URL> = []) { urls = known }
         var all: Set<URL> { lock.withLock { urls } }
         func insert(_ url: URL) { lock.withLock { _ = urls.insert(url) } }
     }
