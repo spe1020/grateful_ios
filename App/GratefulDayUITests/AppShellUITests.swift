@@ -143,7 +143,7 @@ final class AppShellUITests: XCTestCase {
         clear(app)
         editor.tap()
         editor.typeText("Calendar check")
-        app.buttons["today.keyboardDone"].tap()
+        Self.dismissKeyboard(app)
         Thread.sleep(forTimeInterval: 1)
 
         app.tabBars.buttons["Calendar"].tap()
@@ -199,7 +199,7 @@ final class AppShellUITests: XCTestCase {
         clear(app)
         editor.tap()
         editor.typeText("Thirty seconds")
-        app.buttons["today.keyboardDone"].tap()
+        Self.dismissKeyboard(app)
         Thread.sleep(forTimeInterval: 1)
         XCTAssertEqual(app.alerts.count, 0, "no permission prompt")
         XCTAssertTrue(app.buttons["today.delete"].exists, "saved")
@@ -217,10 +217,11 @@ final class AppShellUITests: XCTestCase {
         clear(app)
         editor.tap()
         editor.typeText("Kept after sign-out")
-        app.buttons["today.keyboardDone"].tap()
+        Self.dismissKeyboard(app)
         Thread.sleep(forTimeInterval: 1)
 
         app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(app.buttons["settings.account"].waitForExistence(timeout: 10), "Settings is showing")
         app.buttons["settings.account"].tap()
         if app.buttons["account.signOut"].waitForExistence(timeout: 3) {
             // Left over from an earlier run: sign out first.
@@ -258,7 +259,16 @@ final class AppShellUITests: XCTestCase {
         return element.frame.intersects(app.tabBars.firstMatch.frame)
     }
 
-    /// Delete today's reflection if there is one, so tests start empty.
+    /// Done on the keyboard, then wait until the keyboard has gone: a tab tap
+    /// made while it is still animating away can be dropped (#23 CI run
+    /// 45205166133, Chief P54). A wait for a known state, not a retry.
+    static func dismissKeyboard(_ app: XCUIApplication) {
+        app.buttons["today.keyboardDone"].tap()
+        let gone = NSPredicate(format: "count == 0")
+        let wait = XCTNSPredicateExpectation(predicate: gone, object: app.keyboards)
+        XCTAssertEqual(XCTWaiter().wait(for: [wait], timeout: 10), .completed, "the keyboard went away")
+    }
+
     /// Every UI test runs with no relays (Chief P48): a pass ends unresolved,
     /// so nothing reaches the network and no sheet appears by itself.
     static func app(relays: String = "-uiTestNoRelays") -> XCUIApplication {
@@ -313,6 +323,7 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(app.buttons["account.usedBefore"].waitForExistence(timeout: 5), "signed out")
     }
 
+    /// Delete today's reflection if there is one, so tests start empty.
     private func clear(_ app: XCUIApplication) {
         let delete = app.buttons["today.delete"]
         guard delete.exists else { return }
