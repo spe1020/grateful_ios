@@ -57,6 +57,29 @@ final class PublishTests: XCTestCase {
         for r in relays { XCTAssertGreaterThanOrEqual(r.closeCount, 1, "socket closed") }
     }
 
+    /// Stuck-on-Saving fix: the EVENT send sat outside the timeout. A write
+    /// relay whose socket never finishes connecting held the whole publish,
+    /// and the acknowledgements other relays had already given, until
+    /// URLSession gave up (60 s). It is timed out with the rest, and a
+    /// timeout is never an acknowledgement.
+    func testWriteRelayThatNeverConnectsTimesOutAndIsNeverAnAcknowledgement() async throws {
+        let event = try signed("2026-11-20", "hello", at: 1_000)
+        let json = String(decoding: try JSONEncoder().encode(event), as: UTF8.self)
+        let good = FakeRelay("a"), hung = FakeRelay("b", behavior: .neverConnects)
+        let started = Date()
+        let out = await publisher([good, hung]).publish(json: json, eventId: event.id, to: [good.url, hung.url])
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3, "bounded by the publish timeout")
+        XCTAssertEqual(out[good.url], .accepted)
+        XCTAssertEqual(out[hung.url], .timedOut, "unknown: not accepted, not rejected")
+        XCTAssertTrue(hung.publishedFrames.isEmpty, "nothing reached it")
+        XCTAssertGreaterThanOrEqual(hung.closeCount, 1, "the socket is closed, not left connecting")
+        let write = [good.url, hung.url]
+        let row = try outbox.enqueue(event, dateString: "2026-11-20", baseEventId: nil, baseCreatedAt: nil)
+        try outbox.record(out, for: row, write: write)
+        XCTAssertEqual(row.ackedRelays, [good.url.absoluteString])
+        XCTAssertEqual(DeliveryRules.state(acked: row.ackedRelays, write: write), .sent, "one of two: not synced")
+    }
+
     func testSyncedNeedsTwoDistinctRelays() {
         let write = ["wss://a", "wss://b", "wss://c"].map { URL(string: $0)! }
         XCTAssertEqual(DeliveryRules.state(acked: [], write: write), .localOnly)

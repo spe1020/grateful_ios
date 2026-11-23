@@ -47,12 +47,17 @@ struct PublishPass {
         guard let write = set.write, DeliveryRules.required(write: write) != nil else { return nil }
         var summary = Summary()
         try signPending(&summary)
+        let due = try outbox.due(write: write, now: now())
+        SyncLog.note("publish pass", "signed \(summary.signed), due \(due.count), write: \(SyncLog.hosts(write))")
         for row in try outbox.awaitingRecheck() {
             guard isCurrent() else { return summary }
             try await recheck(row, relays: row.recheckRelays, write: write, summary: &summary)
         }
-        for row in try outbox.due(write: write, now: now()) {
-            guard isCurrent(), !Task.isCancelled else { return summary }
+        for row in due {
+            guard isCurrent(), !Task.isCancelled else {
+                SyncLog.note("publish pass stopped", Task.isCancelled ? "cancelled" : "account or store changed")
+                return summary
+            }
             // A row stopped earlier in this pass (same day) isn't sent.
             guard row.isLive else { continue }
             try await send(row, write: write, summary: &summary)
@@ -139,18 +144,27 @@ struct PublishPass {
         let day = row.dateString
         // A day the read pass found in conflict (or unreadable) is never
         // sent, even if the relay holding the other version is silent now.
-        if let entry = try entry(day), entry.syncState == .conflict || entry.syncState == .blocked { return }
+        let tag = "kind \(row.kind) \(SyncLog.id(row.eventId))"
+        if let entry = try entry(day), entry.syncState == .conflict || entry.syncState == .blocked {
+            SyncLog.note("not sent", "\(tag): the day is in conflict or blocked")
+            return
+        }
         // I4: a revived day's 36669 waits until its deletion is delivered.
         if row.kind == DailyEntry.kind,
            try outbox.rows(dateString: day).contains(where: {
                $0.kind == 5 && $0.isLive && DeliveryRules.state(acked: $0.ackedRelays, write: write) != .synced
            }) {
             summary.waitingOnDeletion += 1
+            SyncLog.note("not sent", "\(tag): waiting on its deletion")
             return
         }
         // Refetch before every send, the first one too (r2.1 item 2).
         let fetched = await fetchDay(day, from: readAndWrite)
-        guard isCurrent(), !Task.isCancelled else { return }
+        SyncLog.note("read before send", "\(tag): \(SyncLog.describe(fetched.outcomes))")
+        guard isCurrent(), !Task.isCancelled else {
+            SyncLog.note("not sent", "\(tag): \(Task.isCancelled ? "cancelled" : "account or store changed") after the read")
+            return
+        }
         let own = try outbox.ownEventIds(dateString: day)
         switch DeliveryRules.preSendCheck(day: day, owner: owner, baseEventId: row.baseEventId,
                                           baseCreatedAt: row.baseCreatedAt, ownEventIds: own, fetched: fetched,
@@ -158,15 +172,19 @@ struct PublishPass {
         case .unresolved:
             try outbox.deferRow(row, now: now())
             summary.deferred += 1
+            SyncLog.note("not sent", "\(tag): too few write relays answered the read; attempt \(row.attempts)")
             return
         case .unbasedRemote(let event):
             try stop(row, remote: event, fetched: fetched)
             summary.conflicts += 1
+            SyncLog.note("not sent", "\(tag): a relay holds another version, \(SyncLog.id(event.id))")
             return
         case .clear:
             break
         }
+        SyncLog.note("sending", "\(tag) to \(SyncLog.hosts(write))")
         let outcomes = await publisher.publish(json: row.eventJSON, eventId: row.eventId, to: write)
+        SyncLog.note("sent", "\(tag): \(SyncLog.describe(outcomes))")
         guard isCurrent() else { return }
         try outbox.record(outcomes, for: row, write: write, now: now())
         summary.sent += 1
@@ -178,6 +196,7 @@ struct PublishPass {
         if row.isLive, DeliveryRules.state(acked: row.ackedRelays, write: write) == .synced {
             try markSynced(row)
             summary.synced += 1
+            SyncLog.note("saved to the account", tag)
         }
     }
 
