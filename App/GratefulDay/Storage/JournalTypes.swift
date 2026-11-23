@@ -31,4 +31,7 @@ enum EarlierVersionReason: String, Codable, Sendable {
     /// couldn't be read marked the day as a conflict (Chief P27). Not shown
     /// in Set aside; the row still holds the same text.
     case localInConflict
+    /// M6: the text the person didn't keep when choosing between this
+    /// iPhone's and the account's version. Shown in Set aside.
+    case notKept
 }

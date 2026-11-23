@@ -24,6 +24,10 @@ struct TodayView: View {
     @State private var setAside: SetAsideFilter?
     /// Bumped after a dismiss so the plain fetch below is read again.
     @State private var earlierVersionsTick = 0
+    /// M6: the conflict screen; the come-back line is hidden for this
+    /// launch once dismissed, and returns on the next while choices are open.
+    @State private var showingConflicts = false
+    @State private var conflictLineDismissed = false
 
     var body: some View {
         NavigationStack {
@@ -73,11 +77,32 @@ struct TodayView: View {
                                 earlierVersionsTick += 1
                             }
                         }
-                        if (try? repo.entry(for: day.dateString))??.syncState == .conflict {
-                            Text(SyncCopy.alsoChangedElsewhere)
-                                .font(GDFont.sectionLabel)
-                                .foregroundStyle(GDColor.foreground)
-                                .accessibilityIdentifier("today.conflict")
+                        if let owner = account.activeOwner {
+                            let review = ConflictReview(context: context, owner: owner)
+                            if let kept = try? review.keptBothNotice() {
+                                KeptBothLine(kept: kept) {
+                                    try? review.clearKeptBothNotice()
+                                    earlierVersionsTick += 1
+                                }
+                            }
+                            if !conflictLineDismissed, let open = try? review.load().items, !open.isEmpty {
+                                ConflictComeBackLine(dates: open.map(\.dateString), onOpen: { showingConflicts = true }) {
+                                    conflictLineDismissed = true
+                                }
+                            }
+                        }
+                        if let owner = account.activeOwner,
+                           (try? ConflictReview(context: context, owner: owner).listsDay(day.dateString)) == true {
+                            Button { showingConflicts = true } label: {
+                                Text(SyncCopy.alsoChangedElsewhere)
+                                    .font(GDFont.sectionLabel)
+                                    .foregroundStyle(GDColor.foreground)
+                                    .multilineTextAlignment(.leading)
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("today.conflict")
                         } else if let kept = try? repo.setAsideVersions().filter({ $0.dateString == day.dateString }), !kept.isEmpty {
                             EarlierVersionLine { setAside = SetAsideFilter(ids: Set(kept.map(\.id))) }
                                 .accessibilityIdentifier("today.earlierVersion")
@@ -123,6 +148,16 @@ struct TodayView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(item: $setAside) { filter in
                 NavigationStack { SetAsideView(only: filter.ids) }
+            }
+            .sheet(isPresented: $showingConflicts, onDismiss: {
+                earlierVersionsTick += 1
+                editor?.reloadIfClean()
+            }) {
+                if let context = store.container?.mainContext, let owner = account.activeOwner {
+                    NavigationStack {
+                        ConflictReviewView(review: ConflictReview(context: context, owner: owner)) { showingConflicts = false }
+                    }
+                }
             }
             .sheet(isPresented: $showingRestore) {
                 NavigationStack {

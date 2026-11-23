@@ -2,8 +2,9 @@ import Foundation
 import SwiftData
 import NostrCore
 
-/// M5b-2 (live): adds the outbox of signed events waiting to be delivered
-/// (M5b plan r2 (b), r2.1). Models are the live ones behind the typealiases.
+/// M5b-2 (FROZEN, as passed by Audit in #15 at 4a3295f): adds the outbox of
+/// signed events waiting to be delivered (M5b plan r2 (b), r2.1). Never
+/// edit; add a new version instead.
 enum JournalSchemaV6: VersionedSchema {
     static let versionIdentifier = Schema.Version(6, 0, 0)
     static var models: [any PersistentModel.Type] {

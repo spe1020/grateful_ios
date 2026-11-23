@@ -54,7 +54,7 @@ struct RemoteImporter {
                     // archived first (once per remote version, Audit M1).
                     if !hasArchive(dateString, eventId: eventId, reason: .localInConflict) {
                         archive(row.notesText, dateString: dateString, reason: .localInConflict,
-                                eventId: eventId, surfaced: false)
+                                eventId: eventId, surfaced: false, isPrivate: row.isPrivate)
                         summary.conflicts += 1
                     }
                     row.syncStateRaw = SyncState.conflict.rawValue
@@ -81,12 +81,13 @@ struct RemoteImporter {
                 if hasPendingEdits(row) {
                     // A remote delete against unsent local edits is a conflict (§4.2).
                     row.syncStateRaw = SyncState.conflict.rawValue
+                    retireOpenConflictCopies(dateString)
                     summary.conflicts += 1
                     continue
                 }
                 if !row.notesText.isEmpty {
                     archive(row.notesText, dateString: dateString, reason: .replacedByRemote,
-                            eventId: row.remoteEventID, surfaced: false)
+                            eventId: row.remoteEventID, surfaced: false, isPrivate: row.isPrivate)
                 }
                 row.notesText = ""
                 row.deletedAt = Date(timeIntervalSince1970: TimeInterval(at))
@@ -121,7 +122,8 @@ struct RemoteImporter {
                     // pass. Archive it only once.
                     row.syncStateRaw = SyncState.conflict.rawValue
                     if hasArchive(dateString, eventId: eventId, reason: .remoteInConflict) { continue }
-                    archive(text, dateString: dateString, reason: .remoteInConflict, eventId: eventId, surfaced: true)
+                    archive(text, dateString: dateString, reason: .remoteInConflict, eventId: eventId, surfaced: true,
+                            isPrivate: isPrivate, eventCreatedAt: createdAt)
                     summary.conflicts += 1
                     summary.surfaced += 1
                     continue
@@ -130,7 +132,7 @@ struct RemoteImporter {
                 if !row.notesText.isEmpty, row.notesText != text {
                     let lost = Self.losesNotes(old: row.notesText, new: text)
                     archive(row.notesText, dateString: dateString, reason: .replacedByRemote,
-                            eventId: row.remoteEventID, surfaced: lost)
+                            eventId: row.remoteEventID, surfaced: lost, isPrivate: row.isPrivate)
                     if lost { summary.surfaced += 1 }
                 }
                 row.notesText = text
@@ -154,10 +156,12 @@ struct RemoteImporter {
     func conflict(dateString: String, remote: RemoteDay?) throws {
         guard let row = try ownerRow(dateString) else { return }
         row.syncStateRaw = SyncState.conflict.rawValue
-        if case .entry(let text, _, let eventId, _, _) = remote,
+        if case .entry(let text, let isPrivate, let eventId, let createdAt, _) = remote,
            !hasArchive(dateString, eventId: eventId, reason: .remoteInConflict) {
-            archive(text, dateString: dateString, reason: .remoteInConflict, eventId: eventId, surfaced: true)
+            archive(text, dateString: dateString, reason: .remoteInConflict, eventId: eventId, surfaced: true,
+                    isPrivate: isPrivate, eventCreatedAt: createdAt)
         }
+        if case .deleted = remote { retireOpenConflictCopies(dateString) }
         try context.save()
     }
 
@@ -187,9 +191,22 @@ struct RemoteImporter {
         return ((try? context.fetchCount(d)) ?? 0) > 0
     }
 
-    private func archive(_ text: String, dateString: String, reason: EarlierVersionReason, eventId: String?, surfaced: Bool) {
+    /// The account now holds a deletion for this day, so any open copy of
+    /// its earlier text is no longer the account's version. It stays in the
+    /// store, hidden, and is never offered on the conflict screen (P34 M1).
+    private func retireOpenConflictCopies(_ dateString: String) {
+        let o: String? = owner, raw = EarlierVersionReason.remoteInConflict.rawValue
+        let d = FetchDescriptor<EarlierVersion>(predicate: #Predicate {
+            $0.ownerPubkey == o && $0.dateString == dateString && $0.reasonRaw == raw && !$0.dismissed
+        })
+        for copy in (try? context.fetch(d)) ?? [] { copy.dismissed = true }
+    }
+
+    private func archive(_ text: String, dateString: String, reason: EarlierVersionReason, eventId: String?, surfaced: Bool,
+                         isPrivate: Bool = true, eventCreatedAt: Int? = nil) {
         context.insert(EarlierVersion(ownerPubkey: owner, dateString: dateString, notesText: text,
-                                      reason: reason, eventId: eventId, surfaced: surfaced, now: now()))
+                                      reason: reason, eventId: eventId, surfaced: surfaced,
+                                      isPrivate: isPrivate, eventCreatedAt: eventCreatedAt, now: now()))
     }
 
     private func newRow(_ dateString: String, text: String, zone: TimeZone, event: NostrEvent? = nil) throws -> JournalEntry {
