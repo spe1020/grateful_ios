@@ -455,6 +455,61 @@ final class PublishPassTests: XCTestCase {
         XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty }, "nothing before the disclosure")
     }
 
+    /// Stuck on "Saving to your account" (iPhone, 2026-11-22): with the
+    /// disclosure accepted and relay.nostr.band never connecting, a pass
+    /// waited out that relay in each of its five reads before the first
+    /// send (40 s at the real timeout) and was cancelled when the iPhone
+    /// locked. The relay is now dialed once in the pass, and the day is saved
+    /// to the two write relays that answered and acknowledged.
+    func testPublishesDespiteADefaultRelayThatNeverConnects() async throws {
+        try entry("2026-11-20", "saved in one pass")
+        try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
+        // The defaults as on the iPhone: nostr.band never connects, damus
+        // refuses the connection (its 503).
+        let relays = RelaySet.defaultRead.map { url -> FakeRelay in
+            switch url.host! {
+            case "relay.nostr.band": return FakeRelay(url.host!, behavior: .neverConnects)
+            case "relay.damus.io": return FakeRelay(url.host!, behavior: .refuseConnect)
+            default: return FakeRelay(url.host!)
+            }
+        }
+        let byHost = Dictionary(uniqueKeysWithValues: relays.map { ($0.url.host!, $0) })
+        let sync = service(relays)
+        let started = Date()
+        await sync.run(owner: owner, secret: secret, context: context)
+        // One 0.3 s timeout for nostr.band, not one for each of the
+        // pass's seven reads.
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.2, "the relay that never connects is waited on once")
+        XCTAssertEqual(byHost["relay.nostr.band"]!.connectCount, 1)
+        XCTAssertEqual(sync.lastPublish?.sent, 1)
+        XCTAssertEqual(sync.lastPublish?.synced, 1)
+        XCTAssertEqual(try row("2026-11-20").syncState, .synced)
+        XCTAssertEqual(byHost["nos.lol"]!.publishedFrames.count, 1)
+        XCTAssertEqual(byHost["relay.primal.net"]!.publishedFrames.count, 1)
+        // Only the approved write relays are ever sent to.
+        XCTAssertTrue(byHost["nostr.wine"]!.publishedFrames.isEmpty, "a read relay")
+        XCTAssertTrue(byHost["relay.nostr.band"]!.publishedFrames.isEmpty)
+    }
+
+    /// The skipped relay never counts as having answered: when it is one of
+    /// only two write relays that can be reached, nothing is sent.
+    func testRelayDialedOnceStillNeverCountsAsAnswered() async throws {
+        try entry("2026-11-20", "stays here")
+        try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
+        let list = try UnsignedEvent(kind: 10002, tags: [["r", "wss://nos.lol"], ["r", "wss://relay.nostr.band"]], content: "")
+            .signed(privateKey: secret, createdAt: 1)
+        let relays = RelaySet.defaultRead.map {
+            FakeRelay($0.host!, events: [list], behavior: $0.host == "relay.nostr.band" ? .neverConnects : .normal)
+        }
+        let sync = service(relays)
+        await sync.run(owner: owner, secret: secret, context: context)
+        XCTAssertEqual(sync.relays?.write?.count, 2)
+        XCTAssertEqual(sync.lastPublish?.sent, 0)
+        XCTAssertEqual(sync.lastPublish?.deferred, 1, "one of two write relays answered: unknown, so not sent")
+        XCTAssertTrue(relays.allSatisfy { $0.publishedFrames.isEmpty })
+        XCTAssertEqual(try row("2026-11-20").syncState, .localOnly)
+    }
+
     /// The same with too few answers to know whether the account has a relay
     /// list: the write set stays unknown (never the defaults), even with the
     /// disclosure accepted, and Account says it couldn't reach the journal.

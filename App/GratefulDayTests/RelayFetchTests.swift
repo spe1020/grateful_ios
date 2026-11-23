@@ -113,7 +113,9 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
     }
 
     /// A new `connect` is a new socket (fetches here are sequential).
-    func reopen() { lock.withLock { isClosed = false } }
+    func reopen() { lock.withLock { isClosed = false; connectCount += 1 } }
+    /// How many times this relay was dialed.
+    private(set) var connectCount = 0
 
     func close() {
         lock.lock()
@@ -180,6 +182,38 @@ final class RelayFetchTests: XCTestCase {
         XCTAssertEqual(result.outcomes[hung.url], .timedOut, "unknown, never read as empty")
         XCTAssertEqual(result.events.count, 1)
         XCTAssertGreaterThanOrEqual(hung.closeCount, 1, "the socket is closed, not left connecting")
+    }
+
+    /// Stuck-on-Saving fix: within one pass, a relay whose socket never
+    /// opened is dialed once. Later queries report it at once as a failed
+    /// connection (unknown, never answered) instead of waiting out the
+    /// timeout again; a new pass dials it again.
+    func testRelayThatNeverConnectsIsDialedOncePerPass() async throws {
+        let good = FakeRelay("a", events: [try entry("2026-11-20", "one", at: 1_000)])
+        let hung = FakeRelay("b", behavior: .neverConnects)
+        let slow = FakeRelay("c", behavior: .silent)
+        let all = [good, hung, slow], urls = all.map(\.url)
+        var f = fetcher(all, timeout: .milliseconds(300))
+        let base = f.transport
+        f.transport = PassTransport(base: base, unreachable: .init())
+        let first = await f.fetch(filter(), from: urls)
+        XCTAssertEqual(first.outcomes[hung.url], .timedOut)
+        let started = Date()
+        let second = await f.fetch(filter(), from: [good.url, hung.url])
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.25, "not waited on again")
+        XCTAssertEqual(second.outcomes[good.url], .answered)
+        XCTAssertEqual(second.outcomes[hung.url], .failed("connect"), "unknown, never read as empty")
+        XCTAssertFalse(second.allAnswered([good.url, hung.url]))
+        XCTAssertEqual(hung.connectCount, 1, "dialed once in the pass")
+        // A relay that connected but didn't answer in time is asked again.
+        let third = await f.fetch(filter(), from: [slow.url])
+        XCTAssertEqual(third.outcomes[slow.url], .timedOut)
+        XCTAssertEqual(slow.connectCount, 2, "connected: dialed again")
+        // The next pass starts with nothing skipped.
+        f.transport = PassTransport(base: base, unreachable: .init())
+        let next = await f.fetch(filter(), from: [hung.url])
+        XCTAssertEqual(next.outcomes[hung.url], .timedOut)
+        XCTAssertEqual(hung.connectCount, 2, "dialed again in a new pass")
     }
 
     func testFetchPagesUntilNoNewEvents() async throws {

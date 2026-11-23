@@ -28,7 +28,7 @@ struct FetchResult: Sendable {
 
 /// Paged queries across relays (interop spec §0, §1.5).
 struct RelayFetcher: Sendable {
-    let transport: RelayTransport
+    var transport: RelayTransport
     var pageTimeout: Duration = .seconds(8)
     var pageLimit = 500
 

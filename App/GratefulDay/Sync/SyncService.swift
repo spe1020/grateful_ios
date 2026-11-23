@@ -44,20 +44,22 @@ final class SyncService {
     var couldNotReach: Bool { status == .failed || publishDeferral == .relayListUnknown }
     private(set) var lastPublish: PublishPass.Summary?
 
-    private let fetcher: RelayFetcher
-    private let publisher: RelayPublisher
+    /// The configured clients. Each pass uses copies of them over its own
+    /// `PassTransport`, so a relay that never connects is dialed once a pass.
+    private let baseFetcher: RelayFetcher
+    private let basePublisher: RelayPublisher
     /// The read in progress, if any; cancelled when the app leaves the foreground.
     private var task: Task<Void, Never>?
     private var taskToken: UUID?
 
     init(transport: RelayTransport = WebSocketTransport()) {
-        fetcher = RelayFetcher(transport: transport)
-        publisher = RelayPublisher(transport: transport)
+        baseFetcher = RelayFetcher(transport: transport)
+        basePublisher = RelayPublisher(transport: transport)
     }
 
     init(fetcher: RelayFetcher, publisher: RelayPublisher) {
-        self.fetcher = fetcher
-        self.publisher = publisher
+        baseFetcher = fetcher
+        basePublisher = publisher
     }
 
     /// Start a read pass unless one is already running. A cancelled pass is
@@ -104,16 +106,31 @@ final class SyncService {
              isCurrent: @escaping @MainActor () -> Bool = { true }) async {
         guard status != .reading else { return }
         status = .reading
+        SyncLog.note("pass started")
+        var fetcher = baseFetcher, publisher = basePublisher
+        // One list for the pass: a relay that didn't open for a read isn't
+        // waited on again for a later read or for the send.
+        let unreachable = PassTransport.Unreachable()
+        fetcher.transport = PassTransport(base: baseFetcher.transport, unreachable: unreachable)
+        publisher.transport = PassTransport(base: basePublisher.transport, unreachable: unreachable)
         let bootstrap = RelaySet.defaultRead
         let listResult = await fetcher.fetch(RelayFilter(authors: [owner], kinds: [10002]), from: bootstrap)
-        if Task.isCancelled { status = .idle; return }
+        SyncLog.note("relay list read", SyncLog.describe(listResult.outcomes))
+        if Task.isCancelled { SyncLog.note("pass stopped", "cancelled after the relay list"); status = .idle; return }
         let set = RelaySet.from(RelaySet.lookup(listResult, owner: owner, bootstrap: bootstrap))
+        SyncLog.note("relay set", "read: \(SyncLog.hosts(set.read)); write: \(SyncLog.hosts(set.write))")
         let journal = await fetcher.fetch(RelayFilter(authors: [owner], kinds: [DailyEntry.kind, 5]), from: set.read)
         let settingsResult = await fetcher.fetch(
             RelayFilter(authors: [owner], kinds: [AppSettings.kind], tagD: [AppSettings.dTag]), from: set.read)
         // Stopped part-way (backgrounded), or the store or account changed
         // while reading: import nothing.
-        if Task.isCancelled || !isCurrent() { status = .idle; return }
+        SyncLog.note("journal read", "\(journal.events.count) events; \(SyncLog.describe(journal.outcomes))")
+        SyncLog.note("settings read", SyncLog.describe(settingsResult.outcomes))
+        if Task.isCancelled || !isCurrent() {
+            SyncLog.note("pass stopped", Task.isCancelled ? "cancelled after reading" : "account or store changed")
+            status = .idle
+            return
+        }
         relays = set
         settings = RemoteSettings.read(settingsResult.events, owner: owner, privateKey: secret)
         let days = RemoteJournal.days(from: journal.events, owner: owner, privateKey: secret)
@@ -125,13 +142,23 @@ final class SyncService {
             status = .failed
             return
         }
-        await publish(owner: owner, secret: secret, context: context, set: set, isCurrent: isCurrent)
+        await publish(owner: owner, secret: secret, context: context, set: set,
+                      fetcher: fetcher, publisher: publisher, isCurrent: isCurrent)
+        let skipped = unreachable.all.sorted { $0.absoluteString < $1.absoluteString }
+        if !skipped.isEmpty { SyncLog.note("never connected, dialed once", SyncLog.hosts(skipped)) }
+        if let deferral = publishDeferral { SyncLog.note("publishing deferred", "\(deferral)") }
+        if let p = lastPublish {
+            SyncLog.note("pass finished", "signed \(p.signed), sent \(p.sent), synced \(p.synced), deferred \(p.deferred), conflicts \(p.conflicts), waiting on deletion \(p.waitingOnDeletion)")
+        } else {
+            SyncLog.note("pass finished", "nothing published")
+        }
         status = .done(summary)
     }
 
     /// Publish after a complete import. Never runs past an unknown or empty
     /// write set, or before spec A's disclosure.
     private func publish(owner: String, secret: Data, context: ModelContext, set: RelaySet,
+                         fetcher: RelayFetcher, publisher: RelayPublisher,
                          isCurrent: @escaping @MainActor () -> Bool) async {
         lastPublish = nil
         guard let write = set.write else { publishDeferral = .relayListUnknown; return }

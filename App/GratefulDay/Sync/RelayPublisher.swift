@@ -16,7 +16,7 @@ enum PublishOutcome: Equatable, Sendable {
 /// never signs: callers pass the stored JSON, so a retry is the same event
 /// byte for byte (same id, created_at and sig).
 struct RelayPublisher: Sendable {
-    let transport: RelayTransport
+    var transport: RelayTransport
     var timeout: Duration = .seconds(8)
 
     func publish(json: String, eventId: String, to relays: [URL]) async -> [URL: PublishOutcome] {
@@ -35,16 +35,19 @@ struct RelayPublisher: Sendable {
         let connection: RelayConnection
         do { connection = try await transport.connect(url) } catch { return .failed("connect") }
         defer { connection.close() }
+        // The stored JSON goes out unchanged inside the EVENT frame.
+        let frame = "[\"EVENT\"," + json + "]"
         return await withTaskCancellationHandler {
-            do {
-                // The stored JSON goes out unchanged inside the EVENT frame.
-                try await connection.send("[\"EVENT\"," + json + "]")
-            } catch {
-                return .failed("send")
-            }
             let timeout = self.timeout
             return await withTaskGroup(of: PublishOutcome?.self) { group in
                 group.addTask {
+                    // The send is inside the timeout, as in `RelayFetcher`:
+                    // the first send on a socket waits for the connection,
+                    // and a write relay that never finishes connecting held
+                    // it, and every other relay's result, for URLSession's
+                    // own 60 s. Such a relay is `.timedOut`: never an
+                    // acknowledgement.
+                    do { try await connection.send(frame) } catch { return .failed("send") }
                     while true {
                         guard let text = try? await connection.receive() else { return .failed("closed") }
                         // Only an OK for this id counts. A NOTICE, an OK for
