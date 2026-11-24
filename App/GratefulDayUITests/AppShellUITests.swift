@@ -113,6 +113,24 @@ final class AppShellUITests: XCTestCase {
         let app = Self.app()
         app.launch()
         XCTAssertTrue(app.textViews["today.editor"].waitForExistence(timeout: 10))
+        // P55: how far down the footer sits depends on the day's passage. On
+        // some days it rests under the translucent tab bar, and the audit
+        // then measures its text against the bar's blur (CI run 45295897604:
+        // "On this iPhone only" at y 844 on an 874 pt screen). That one case
+        // is skipped here, as in the largest-text audit below...
+        try app.performAccessibilityAudit { issue in
+            Self.log(issue)
+            return Self.isBehindTabBar(issue, app)
+        }
+        // ...and the footer is then audited again where it can be read: fully
+        // above the tab bar, against Today's own background. No exemption.
+        let footer = app.buttons["today.localOnly"]
+        XCTAssertTrue(footer.exists)
+        let bar = app.tabBars.firstMatch.frame
+        for _ in 0..<5 where footer.frame.maxY > bar.minY {
+            app.scrollViews.firstMatch.swipeUp(velocity: .slow)
+        }
+        XCTAssertLessThanOrEqual(footer.frame.maxY, bar.minY, "footer clear of the tab bar")
         try app.performAccessibilityAudit { issue in
             Self.log(issue)
             return false
@@ -140,6 +158,7 @@ final class AppShellUITests: XCTestCase {
     /// M3 criteria 5 and 6: writing today marks today in the calendar and
     /// updates the counts; future days are unavailable.
     func testCalendarMarksTodayAfterWriting() {
+        Self.waitOutMidnight()
         let app = Self.app()
         app.launch()
         let editor = app.textViews["today.editor"]
@@ -283,6 +302,20 @@ final class AppShellUITests: XCTestCase {
 
     /// Every UI test runs with no relays (Chief P48): a pass ends unresolved,
     /// so nothing reaches the network and no sheet appears by itself.
+    /// P55: a test that writes today and then looks for "Today" fails when
+    /// the date changes in between (CI run 45292710132 typed at 23:59:51 UTC
+    /// and looked at 00:00:12). Close to midnight, start after it instead.
+    /// The app and this runner share the simulator's time zone.
+    static func waitOutMidnight(margin: TimeInterval = 300) {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let now = Date()
+        guard let midnight = calendar.nextDate(after: now, matching: DateComponents(hour: 0, minute: 0, second: 0),
+                                               matchingPolicy: .nextTime) else { return }
+        let left = midnight.timeIntervalSince(now)
+        if left < margin { Thread.sleep(forTimeInterval: left + 2) }
+    }
+
     static func app(relays: String = "-uiTestNoRelays") -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments.append(relays)
