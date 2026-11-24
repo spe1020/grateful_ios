@@ -159,6 +159,8 @@ struct TodayView: View {
                     case .none:
                         EmptyView()
                     }
+                    // PROBE (not for merge): low contrast outside the card must still fail.
+                    Text("P62 probe outside the card").foregroundStyle(Color(white: 0.9))
                 }
                 .padding(.horizontal, GDSpacing.medium)
                 .padding(.vertical, GDSpacing.large)
