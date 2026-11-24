@@ -113,7 +113,8 @@ final class AppShellUITests: XCTestCase {
         let app = Self.app()
         app.launch()
         XCTAssertTrue(app.textViews["today.editor"].waitForExistence(timeout: 10))
-        // P59: one plain audit, no exemptions, with Today scrolled to its end,
+        // P59: one plain audit with Today scrolled to its end (its only
+        // exemption is P60/P62's, below),
         // where "On this iPhone only" must sit fully above the floating tab
         // bar. The pill is measured by its buttons: `tabBars.firstMatch`'s
         // frame doesn't match what's drawn on iOS 26 (CI run 45301430098).
@@ -139,7 +140,7 @@ final class AppShellUITests: XCTestCase {
         XCTAssertLessThanOrEqual(footer.frame.maxY, Self.tabBarTop(app), "the footer is fully above the tab bar")
         try app.performAccessibilityAudit { issue in
             Self.log(issue)
-            return false
+            return Self.isWisdomCardContrastFalsePositive(issue, app)
         }
     }
 
@@ -284,6 +285,30 @@ final class AppShellUITests: XCTestCase {
     private static func log(_ issue: XCUIAccessibilityAuditIssue) {
         let element = issue.element.map { "\($0.elementType.rawValue) id=\"\($0.identifier)\" label=\"\($0.label)\" frame=\($0.frame)" } ?? "nil"
         print("A11Y-AUDIT-ISSUE type=\(issue.auditType.rawValue) compact=\"\(issue.compactDescription)\" detail=\"\(issue.detailedDescription)\" element=\(element)")
+    }
+
+    /// P60/P62 (Chief): Apple's contrast audit sometimes reports dark text on
+    /// the cream wisdom card although it is 11.54:1. CI run 45312897251 hit
+    /// "Reflect on this", and run 45320442017 also hit "Carry it with you", a
+    /// child of a `.combine` group the audit reported with `id=""`. Every
+    /// text in `WisdomCard` is `GDColor.foreground` on the card's
+    /// `GDColor.secondary` fill (`WisdomCard.swift`), the pair
+    /// `ColorContrastTests` computes from the tokens. So only a `.contrast`
+    /// issue whose element lies entirely inside the card's frame, read now,
+    /// is skipped, and each skip is printed. Matching is by frame because a
+    /// child identifier inside `.combine` never surfaces as its own element.
+    /// Fails closed: no card, no element or an empty frame (an element that
+    /// no longer resolves) fails the issue,
+    /// and so does any other issue type, or contrast anywhere else.
+    @MainActor
+    private static func isWisdomCardContrastFalsePositive(_ issue: XCUIAccessibilityAuditIssue, _ app: XCUIApplication) -> Bool {
+        guard issue.auditType == .contrast, let element = issue.element else { return false }
+        let card = app.descendants(matching: .any)["wisdom.card"].firstMatch
+        guard card.exists else { return false }
+        let cardFrame = card.frame, issueFrame = element.frame
+        guard !cardFrame.isEmpty, !issueFrame.isEmpty, cardFrame.contains(issueFrame) else { return false }
+        print("A11Y-AUDIT-SKIPPED P62 type=\(issue.auditType.rawValue) id=\"\(element.identifier)\" label=\"\(element.label)\" frame=\(issueFrame) card=\(cardFrame)")
+        return true
     }
 
     /// The top of the drawn tab bar, taken from its buttons (P59).
