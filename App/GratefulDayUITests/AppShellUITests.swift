@@ -132,11 +132,20 @@ final class AppShellUITests: XCTestCase {
         // audit then catches the button's pressed (dimmed) state (CI run
         // 45298363097). Then wait for the scroll to come to rest.
         let window = app.windows.firstMatch
-        for _ in 0..<5 where footer.frame.maxY > bar.minY {
+        Self.logLayout(app, "before scroll")
+        // P55 evidence (Chief/Audit): three drags regardless, logging the
+        // layout after each, to show whether Today reaches its end with the
+        // footer still under the floating tab bar.
+        for drag in 1...3 {
             let start = window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 8, dy: bar.minY - 40))
             start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -300)))
+            Self.waitUntilStill(footer)
+            Self.logLayout(app, "after drag \(drag)")
         }
-        Self.waitUntilStill(footer)
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Today after three drags"
+        shot.lifetime = .keepAlways
+        add(shot)
         XCTAssertLessThanOrEqual(footer.frame.maxY, bar.minY, "footer clear of the tab bar")
         try app.performAccessibilityAudit { issue in
             Self.log(issue)
@@ -313,6 +322,15 @@ final class AppShellUITests: XCTestCase {
     /// the date changes in between (CI run 45292710132 typed at 23:59:51 UTC
     /// and looked at 00:00:12). Close to midnight, start after it instead.
     /// The app and this runner share the simulator's time zone.
+    /// P55 evidence: the frames that decide whether the footer can clear
+    /// the floating tab bar.
+    @MainActor
+    static func logLayout(_ app: XCUIApplication, _ moment: String) {
+        let bar = app.tabBars.firstMatch
+        let buttons = bar.buttons.allElementsBoundByIndex.map { "\($0.label)=\($0.frame)" }.joined(separator: " ")
+        print("A11Y-LAYOUT \(moment): window=\(app.windows.firstMatch.frame) tabBar=\(bar.frame) tabButtons=[\(buttons)] date=\(app.staticTexts["today.date"].frame) footerButton=\(app.buttons["today.localOnly"].frame) footerText=\(app.staticTexts["On this iPhone only"].firstMatch.frame) reflect=\(app.buttons["wisdom.reflect"].frame) scrollView=\(app.scrollViews.firstMatch.frame)")
+    }
+
     /// P55: waits (up to 10 s) until `element` has kept the same frame for
     /// half a second, so an audit never measures a scroll still settling.
     static func waitUntilStill(_ element: XCUIElement) {
