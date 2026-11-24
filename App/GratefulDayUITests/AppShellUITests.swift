@@ -113,7 +113,8 @@ final class AppShellUITests: XCTestCase {
         let app = Self.app()
         app.launch()
         XCTAssertTrue(app.textViews["today.editor"].waitForExistence(timeout: 10))
-        // P59: one plain audit, no exemptions, with Today scrolled to its end,
+        // P59: one plain audit with Today scrolled to its end (its only
+        // exemption is P60's, below),
         // where "On this iPhone only" must sit fully above the floating tab
         // bar. The pill is measured by its buttons: `tabBars.firstMatch`'s
         // frame doesn't match what's drawn on iOS 26 (CI run 45301430098).
@@ -139,7 +140,7 @@ final class AppShellUITests: XCTestCase {
         XCTAssertLessThanOrEqual(footer.frame.maxY, Self.tabBarTop(app), "the footer is fully above the tab bar")
         try app.performAccessibilityAudit { issue in
             Self.log(issue)
-            return false
+            return Self.isKnownReflectContrastFalsePositive(issue)
         }
     }
 
@@ -284,6 +285,21 @@ final class AppShellUITests: XCTestCase {
     private static func log(_ issue: XCUIAccessibilityAuditIssue) {
         let element = issue.element.map { "\($0.elementType.rawValue) id=\"\($0.identifier)\" label=\"\($0.label)\" frame=\($0.frame)" } ?? "nil"
         print("A11Y-AUDIT-ISSUE type=\(issue.auditType.rawValue) compact=\"\(issue.compactDescription)\" detail=\"\(issue.detailedDescription)\" element=\(element)")
+    }
+
+    /// P60 (Chief): Apple's contrast audit sometimes reports "Reflect on
+    /// this" on Today although it is dark text on cream (CI run 45312897251:
+    /// Today at rest, the audit's own crop dark on cream; the same code
+    /// passed on `main` and twice on #24). That pair, `GDColor.foreground`
+    /// on `GDColor.secondary`, is guaranteed by `ColorContrastTests`, which
+    /// computes it from the tokens. Skips only a `.contrast` issue on the
+    /// `wisdom.reflect` element, and prints every skip; any other issue
+    /// type, or contrast on any other element, still fails.
+    @MainActor
+    private static func isKnownReflectContrastFalsePositive(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
+        guard issue.auditType == .contrast, issue.element?.identifier == "wisdom.reflect" else { return false }
+        print("A11Y-AUDIT-SKIPPED P60 type=\(issue.auditType.rawValue) element=wisdom.reflect compact=\"\(issue.compactDescription)\"")
+        return true
     }
 
     /// The top of the drawn tab bar, taken from its buttons (P59).
