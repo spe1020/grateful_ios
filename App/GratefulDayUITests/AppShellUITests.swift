@@ -113,40 +113,30 @@ final class AppShellUITests: XCTestCase {
         let app = Self.app()
         app.launch()
         XCTAssertTrue(app.textViews["today.editor"].waitForExistence(timeout: 10))
-        // P55: how far down the footer sits depends on the day's passage. On
-        // some days it rests under the translucent tab bar, and the audit
-        // then measures its text against the bar's blur (CI run 45295897604:
-        // "On this iPhone only" at y 844 on an 874 pt screen). That one case
-        // is skipped here, as in the largest-text audit below...
-        try app.performAccessibilityAudit { issue in
-            Self.log(issue)
-            return Self.isBehindTabBar(issue, app)
-        }
-        // ...and the footer is then audited again where it can be read: fully
-        // above the tab bar, against Today's own background. No exemption.
-        let footer = app.buttons["today.localOnly"]
+        // P59: one plain audit, no exemptions, with Today scrolled to its end,
+        // where "On this iPhone only" must sit fully above the floating tab
+        // bar. The pill is measured by its buttons: `tabBars.firstMatch`'s
+        // frame doesn't match what's drawn on iOS 26 (CI run 45301430098).
+        let date = app.staticTexts["today.date"]
+        let footer = app.staticTexts["On this iPhone only"].firstMatch
         XCTAssertTrue(footer.exists)
-        let bar = app.tabBars.firstMatch.frame
-        // Drag in the left margin, where nothing can be pressed: a swipe from
-        // the middle of the screen can start on "Reflect on this", and the
-        // audit then catches the button's pressed (dimmed) state (CI run
-        // 45298363097). Then wait for the scroll to come to rest.
+        Self.logLayout(app, "at launch")
+        // Drag in the left margin, where nothing can be pressed, until the
+        // date stops moving: the end of the content.
         let window = app.windows.firstMatch
-        Self.logLayout(app, "before scroll")
-        // P55 evidence (Chief/Audit): three drags regardless, logging the
-        // layout after each, to show whether Today reaches its end with the
-        // footer still under the floating tab bar.
-        for drag in 1...3 {
-            let start = window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 8, dy: bar.minY - 40))
-            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -300)))
-            Self.waitUntilStill(footer)
-            Self.logLayout(app, "after drag \(drag)")
+        for _ in 0..<4 {
+            let before = date.frame
+            let start = window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 8, dy: window.frame.height * 0.7))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -400)))
+            Self.waitUntilStill(date)
+            if date.frame == before { break }
         }
+        Self.logLayout(app, "at the end")
         let shot = XCTAttachment(screenshot: app.screenshot())
-        shot.name = "Today after three drags"
+        shot.name = "Today scrolled to the end"
         shot.lifetime = .keepAlways
         add(shot)
-        XCTAssertLessThanOrEqual(footer.frame.maxY, bar.minY, "footer clear of the tab bar")
+        XCTAssertLessThanOrEqual(footer.frame.maxY, Self.tabBarTop(app), "the footer is fully above the tab bar")
         try app.performAccessibilityAudit { issue in
             Self.log(issue)
             return false
@@ -296,6 +286,34 @@ final class AppShellUITests: XCTestCase {
         print("A11Y-AUDIT-ISSUE type=\(issue.auditType.rawValue) compact=\"\(issue.compactDescription)\" detail=\"\(issue.detailedDescription)\" element=\(element)")
     }
 
+    /// The top of the drawn tab bar, taken from its buttons (P59).
+    @MainActor
+    static func tabBarTop(_ app: XCUIApplication) -> CGFloat {
+        app.tabBars.firstMatch.buttons.allElementsBoundByIndex.map(\.frame.minY).min() ?? app.windows.firstMatch.frame.maxY
+    }
+
+    /// P59 evidence: the frames that decide whether the footer clears the
+    /// floating tab bar.
+    @MainActor
+    static func logLayout(_ app: XCUIApplication, _ moment: String) {
+        let bar = app.tabBars.firstMatch
+        let buttons = bar.buttons.allElementsBoundByIndex.map { "\($0.label)=\($0.frame)" }.joined(separator: " ")
+        print("A11Y-LAYOUT \(moment): window=\(app.windows.firstMatch.frame) tabBar=\(bar.frame) tabButtons=[\(buttons)] date=\(app.staticTexts["today.date"].frame) footerText=\(app.staticTexts["On this iPhone only"].firstMatch.frame) footerButton=\(app.buttons["today.localOnly"].frame)")
+    }
+
+    /// Waits (up to 10 s) until `element` keeps the same frame for half a
+    /// second, so the audit never measures a scroll still settling.
+    static func waitUntilStill(_ element: XCUIElement) {
+        var last = element.frame
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.5)
+            let now = element.frame
+            if now == last { return }
+            last = now
+        }
+    }
+
     /// At the largest text sizes, scrolled content passes under the
     /// translucent tab bar, and the audit's screenshot then measures text
     /// against the bar's blur. Only that contrast case is skipped; every
@@ -316,34 +334,10 @@ final class AppShellUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [wait], timeout: 10), .completed, "the keyboard went away")
     }
 
-    /// Every UI test runs with no relays (Chief P48): a pass ends unresolved,
-    /// so nothing reaches the network and no sheet appears by itself.
     /// P55: a test that writes today and then looks for "Today" fails when
     /// the date changes in between (CI run 45292710132 typed at 23:59:51 UTC
     /// and looked at 00:00:12). Close to midnight, start after it instead.
     /// The app and this runner share the simulator's time zone.
-    /// P55 evidence: the frames that decide whether the footer can clear
-    /// the floating tab bar.
-    @MainActor
-    static func logLayout(_ app: XCUIApplication, _ moment: String) {
-        let bar = app.tabBars.firstMatch
-        let buttons = bar.buttons.allElementsBoundByIndex.map { "\($0.label)=\($0.frame)" }.joined(separator: " ")
-        print("A11Y-LAYOUT \(moment): window=\(app.windows.firstMatch.frame) tabBar=\(bar.frame) tabButtons=[\(buttons)] date=\(app.staticTexts["today.date"].frame) footerButton=\(app.buttons["today.localOnly"].frame) footerText=\(app.staticTexts["On this iPhone only"].firstMatch.frame) reflect=\(app.buttons["wisdom.reflect"].frame) scrollView=\(app.scrollViews.firstMatch.frame)")
-    }
-
-    /// P55: waits (up to 10 s) until `element` has kept the same frame for
-    /// half a second, so an audit never measures a scroll still settling.
-    static func waitUntilStill(_ element: XCUIElement) {
-        var last = element.frame
-        let deadline = Date().addingTimeInterval(10)
-        while Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.5)
-            let now = element.frame
-            if now == last { return }
-            last = now
-        }
-    }
-
     static func waitOutMidnight(margin: TimeInterval = 300) {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
@@ -354,6 +348,8 @@ final class AppShellUITests: XCTestCase {
         if left < margin { Thread.sleep(forTimeInterval: left + 2) }
     }
 
+    /// Every UI test runs with no relays (Chief P48): a pass ends unresolved,
+    /// so nothing reaches the network and no sheet appears by itself.
     static func app(relays: String = "-uiTestNoRelays") -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments.append(relays)
