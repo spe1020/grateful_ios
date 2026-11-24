@@ -253,11 +253,6 @@ final class AppShellUITests: XCTestCase {
         clear(app)
     }
 
-    /// At the largest text sizes, scrolled content passes under the
-    /// translucent tab bar, and the audit's screenshot then measures text
-    /// against the bar's blur. Only that contrast case is skipped; every
-    /// other issue, and contrast anywhere else on screen, still fails.
-    @MainActor
     /// P55: name the element behind an audit failure in the CI log. Never
     /// ignores the issue: it only prints it before the audit fails.
     @MainActor
@@ -266,6 +261,11 @@ final class AppShellUITests: XCTestCase {
         print("A11Y-AUDIT-ISSUE type=\(issue.auditType.rawValue) compact=\"\(issue.compactDescription)\" detail=\"\(issue.detailedDescription)\" element=\(element)")
     }
 
+    /// At the largest text sizes, scrolled content passes under the
+    /// translucent tab bar, and the audit's screenshot then measures text
+    /// against the bar's blur. Only that contrast case is skipped; every
+    /// other issue, and contrast anywhere else on screen, still fails.
+    @MainActor
     private static func isBehindTabBar(_ issue: XCUIAccessibilityAuditIssue, _ app: XCUIApplication) -> Bool {
         guard issue.auditType == .contrast, let element = issue.element else { return false }
         return element.frame.intersects(app.tabBars.firstMatch.frame)
