@@ -20,9 +20,17 @@ struct PassTransport: RelayTransport {
     /// and its sends.
     final class Unreachable: @unchecked Sendable {
         private let lock = NSLock()
-        private var urls: Set<URL> = []
+        private var urls: Set<URL>
+        /// Starts with relays already known not to open (remembered from an
+        /// earlier pass, `SyncService`): they aren't dialed at all.
+        private var openedURLs: Set<URL> = []
+        init(_ known: Set<URL> = []) { urls = known }
         var all: Set<URL> { lock.withLock { urls } }
         func insert(_ url: URL) { lock.withLock { _ = urls.insert(url) } }
+        /// Relays whose first send got an answer from the socket in this pass:
+        /// proof the phone's network worked (Audit #22 M1).
+        var opened: Set<URL> { lock.withLock { openedURLs } }
+        func noteOpened(_ url: URL) { lock.withLock { _ = openedURLs.insert(url) } }
     }
 
     let base: RelayTransport
@@ -31,7 +39,7 @@ struct PassTransport: RelayTransport {
     func connect(_ url: URL) async throws -> RelayConnection {
         if unreachable.all.contains(url) { throw URLError(.cannotConnectToHost) }
         let unreachable = self.unreachable
-        return Probe(try await base.connect(url)) { unreachable.insert(url) }
+        return Probe(try await base.connect(url), opened: { unreachable.noteOpened(url) }) { unreachable.insert(url) }
     }
 
     /// Passes everything through, and reports a connection that is closed
@@ -40,11 +48,14 @@ struct PassTransport: RelayTransport {
         private enum FirstSend { case notStarted, waiting, finished }
         private let inner: RelayConnection
         private let neverOpened: @Sendable () -> Void
+        private let opened: @Sendable () -> Void
         private let lock = NSLock()
         private var firstSend = FirstSend.notStarted
 
-        init(_ inner: RelayConnection, neverOpened: @escaping @Sendable () -> Void) {
+        init(_ inner: RelayConnection, opened: @escaping @Sendable () -> Void = {},
+             neverOpened: @escaping @Sendable () -> Void) {
             self.inner = inner
+            self.opened = opened
             self.neverOpened = neverOpened
         }
 
@@ -59,6 +70,8 @@ struct PassTransport: RelayTransport {
             // Whether it succeeds or throws, the socket gave an answer.
             defer { if first { lock.withLock { if firstSend == .waiting { firstSend = .finished } } } }
             try await inner.send(text)
+            // The send went through: the socket opened.
+            if first { opened() }
         }
 
         func receive() async throws -> String { try await inner.receive() }

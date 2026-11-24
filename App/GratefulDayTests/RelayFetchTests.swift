@@ -4,7 +4,11 @@ import GratefulDayCore
 @testable import GratefulDay
 
 /// A scripted relay: answers REQs from a fixed event list, or misbehaves.
-final class FakeRelay: RelayConnection, @unchecked Sendable {
+/// Each `connect` through `FakeTransport` is its own socket (`FakeSocket`),
+/// as with `URLSessionWebSocketTask`, so a pass can query one relay on two
+/// connections at once (parallel reads). The relay holds what's shared: its
+/// events, its behaviour and what it has seen.
+final class FakeRelay: @unchecked Sendable {
     enum Behavior {
         case normal, silent, closeWithAuth, refuseConnect, eventsNoEose
         /// The socket never finishes connecting: `send` waits until it's
@@ -17,16 +21,18 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
     var pageCap: Int
     /// Per-request page sizes (first REQ uses [0]); past the end, `pageCap`.
     var pageCaps: [Int] = []
-    private var outbox: [String] = []
-    private var waiter: CheckedContinuation<String, Error>?
-    private var sendWaiter: CheckedContinuation<Void, Error>?
-    private let lock = NSLock()
+    fileprivate let lock = NSLock()
     private(set) var requests: [[String: Any]] = []
+    /// When each REQ arrived (for checking that reads overlap).
+    private(set) var requestTimes: [Date] = []
     /// How this relay answers an EVENT frame (M5b-2 publish tests).
     enum OkReply { case accept, duplicate, reject, noticeOnly, otherId, silent }
     var okReply: OkReply = .accept
     /// Every EVENT frame received, as sent.
     private(set) var publishedFrames: [String] = []
+    /// How many times this relay was dialed, and how many sockets were closed.
+    private(set) var connectCount = 0
+    private(set) var closeCount = 0
 
     init(_ host: String, events: [NostrEvent] = [], behavior: Behavior = .normal, pageCap: Int = 1000) {
         url = URL(string: "wss://\(host)")!
@@ -35,22 +41,16 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
         self.pageCap = pageCap
     }
 
-    /// Like `URLSessionWebSocketTask.cancel`, closing is terminal: any send
-    /// or receive afterwards throws (Audit, #14 early read).
-    private var isClosed = false
-    private(set) var closeCount = 0
+    /// A new socket to this relay.
+    func connect() -> FakeSocket {
+        lock.withLock { connectCount += 1 }
+        return FakeSocket(relay: self)
+    }
 
-    func send(_ text: String) async throws {
-        if lock.withLock({ isClosed }) { throw URLError(.cancelled) }
-        if behavior == .neverConnects {
-            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-                lock.lock()
-                if isClosed { lock.unlock(); c.resume(throwing: URLError(.cancelled)); return }
-                sendWaiter = c
-                lock.unlock()
-            }
-            return
-        }
+    fileprivate func noteClose() { lock.withLock { closeCount += 1 } }
+
+    /// Handle one client frame on `socket`.
+    fileprivate func handle(_ text: String, on socket: FakeSocket) throws {
         guard let array = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any] else { return }
         if array.first as? String == "EVENT", array.count >= 2, let obj = array[1] as? [String: Any] {
             lock.withLock { publishedFrames.append(text) }
@@ -58,22 +58,23 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
             let id = obj["id"] as? String ?? ""
             switch okReply {
             case .accept:
-                if let event = try? JSONDecoder().decode(NostrEvent.self, from: JSONSerialization.data(withJSONObject: obj)),
-                   !events.contains(where: { $0.id == id }) { events.append(event) }
-                push("[\"OK\",\"\(id)\",true,\"\"]")
-            case .duplicate: push("[\"OK\",\"\(id)\",true,\"duplicate: have it\"]")
-            case .reject: push("[\"OK\",\"\(id)\",false,\"blocked: no\"]")
-            case .noticeOnly: push("[\"NOTICE\",\"thanks\"]")
-            case .otherId: push("[\"OK\",\"\(String(repeating: "0", count: 64))\",true,\"\"]")
+                if let event = try? JSONDecoder().decode(NostrEvent.self, from: JSONSerialization.data(withJSONObject: obj)) {
+                    lock.withLock { if !events.contains(where: { $0.id == id }) { events.append(event) } }
+                }
+                socket.push("[\"OK\",\"\(id)\",true,\"\"]")
+            case .duplicate: socket.push("[\"OK\",\"\(id)\",true,\"duplicate: have it\"]")
+            case .reject: socket.push("[\"OK\",\"\(id)\",false,\"blocked: no\"]")
+            case .noticeOnly: socket.push("[\"NOTICE\",\"thanks\"]")
+            case .otherId: socket.push("[\"OK\",\"\(String(repeating: "0", count: 64))\",true,\"\"]")
             case .silent: break
             }
             return
         }
         guard array.first as? String == "REQ", let sub = array[1] as? String, let f = array[2] as? [String: Any] else { return }
-        let index = lock.withLock { requests.append(f); return requests.count - 1 }
+        let index = lock.withLock { requests.append(f); requestTimes.append(Date()); return requests.count - 1 }
         switch behavior {
         case .silent, .refuseConnect, .neverConnects: return
-        case .closeWithAuth: push("[\"CLOSED\",\"\(sub)\",\"auth-required: sign in\"]"); return
+        case .closeWithAuth: socket.push("[\"CLOSED\",\"\(sub)\",\"auth-required: sign in\"]"); return
         case .normal, .eventsNoEose: break
         }
         let kinds = f["kinds"] as? [Int] ?? []
@@ -83,19 +84,49 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
         // Newest first; ties by id so a capped second is deterministic.
         let dTags = f["#d"] as? [String]
         let aTags = f["#a"] as? [String]
-        let matching = events.filter { e in
+        let all = lock.withLock { events }
+        let matching = all.filter { e in
             kinds.contains(e.kind) && e.createdAt <= until && (dTags == nil || dTags!.contains(e.tagValue("d") ?? ""))
                 && (aTags == nil || e.tags.contains { $0.count >= 2 && $0[0] == "a" && aTags!.contains($0[1]) })
         }
             .sorted { $0.createdAt != $1.createdAt ? $0.createdAt > $1.createdAt : $0.id < $1.id }.prefix(limit)
         for e in matching {
             let data = try JSONEncoder().encode(e)
-            push("[\"EVENT\",\"\(sub)\",\(String(decoding: data, as: UTF8.self))]")
+            socket.push("[\"EVENT\",\"\(sub)\",\(String(decoding: data, as: UTF8.self))]")
         }
-        if behavior != .eventsNoEose { push("[\"EOSE\",\"\(sub)\"]") }
+        if behavior != .eventsNoEose { socket.push("[\"EOSE\",\"\(sub)\"]") }
+    }
+}
+
+/// One connection to a `FakeRelay`. Like `URLSessionWebSocketTask.cancel`,
+/// closing is terminal: any send or receive afterwards throws (Audit, #14
+/// early read).
+final class FakeSocket: RelayConnection, @unchecked Sendable {
+    let relay: FakeRelay
+    var url: URL { relay.url }
+    private let lock = NSLock()
+    private var outbox: [String] = []
+    private var waiter: CheckedContinuation<String, Error>?
+    private var sendWaiter: CheckedContinuation<Void, Error>?
+    private var isClosed = false
+
+    init(relay: FakeRelay) { self.relay = relay }
+
+    func send(_ text: String) async throws {
+        if lock.withLock({ isClosed }) { throw URLError(.cancelled) }
+        if relay.behavior == .neverConnects {
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+                lock.lock()
+                if isClosed { lock.unlock(); c.resume(throwing: URLError(.cancelled)); return }
+                sendWaiter = c
+                lock.unlock()
+            }
+            return
+        }
+        try relay.handle(text, on: self)
     }
 
-    private func push(_ s: String) {
+    fileprivate func push(_ s: String) {
         lock.lock()
         if let w = waiter { waiter = nil; lock.unlock(); w.resume(returning: s); return }
         outbox.append(s)
@@ -112,20 +143,16 @@ final class FakeRelay: RelayConnection, @unchecked Sendable {
         }
     }
 
-    /// A new `connect` is a new socket (fetches here are sequential).
-    func reopen() { lock.withLock { isClosed = false; connectCount += 1 } }
-    /// How many times this relay was dialed.
-    private(set) var connectCount = 0
-
     func close() {
         lock.lock()
+        let first = !isClosed
         isClosed = true
-        closeCount += 1
         let w = waiter
         waiter = nil
         let s = sendWaiter
         sendWaiter = nil
         lock.unlock()
+        if first { relay.noteClose() }
         w?.resume(throwing: URLError(.cancelled))
         s?.resume(throwing: URLError(.cancelled))
     }
@@ -135,8 +162,7 @@ struct FakeTransport: RelayTransport {
     let relays: [URL: FakeRelay]
     func connect(_ url: URL) async throws -> RelayConnection {
         guard let r = relays[url], r.behavior != .refuseConnect else { throw URLError(.cannotConnectToHost) }
-        r.reopen()
-        return r
+        return r.connect()
     }
 }
 

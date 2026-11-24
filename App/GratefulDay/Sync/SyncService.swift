@@ -38,7 +38,11 @@ final class SyncService {
     /// Runs a read-then-publish pass for the connected account (set by the
     /// app). Used by Try now and after conflict choices.
     var runner: (() -> Void)?
-    func tryNow() { runner?() }
+    /// Try now dials every relay again (Audit #22 M1): the person asked.
+    func tryNow() {
+        unreachableSince = [:]
+        runner?()
+    }
 
     /// The last read didn't complete (spec B): nothing was published.
     var couldNotReach: Bool { status == .failed || publishDeferral == .relayListUnknown }
@@ -85,6 +89,32 @@ final class SyncService {
     /// A save landed while a pass was running: run one more pass after it,
     /// since the running pass may already have chosen what to publish.
     private(set) var followUpRequested = false
+    /// Relays whose socket didn't open in a finished pass, and when. For
+    /// `unreachableMemory` after that, later passes don't dial them: they are
+    /// reported at once as a failed connection (unknown, never "answered",
+    /// never an acknowledgement), exactly as within one pass (#20). In memory
+    /// only; `reset()` (an account or store change) forgets them. A pass that
+    /// was cancelled adds nothing, since its sockets were closed while still
+    /// opening. Relay reliability, Priority B (Chief 2dfa43a6).
+    private(set) var unreachableSince: [URL: Date] = [:]
+    var unreachableMemory: TimeInterval = 600
+    /// Whether, with `remembered` not dialed, at least 2 bootstrap relays and
+    /// at least 2 write relays (all of them when there are fewer than 2) are
+    /// still dialed (Chief P47).
+    static func keepsEnoughDialable(remembered: Set<URL>, bootstrap: [URL], write: [URL]?) -> Bool {
+        func enough(_ relays: [URL]) -> Bool {
+            let unique = Set(relays)
+            return unique.subtracting(remembered).count >= min(2, unique.count)
+        }
+        return enough(bootstrap) && enough(write ?? [])
+    }
+
+    /// Remembered relays still inside `unreachableMemory`.
+    func rememberedUnreachable() -> Set<URL> {
+        let now = now()
+        return Set(unreachableSince.filter { now.timeIntervalSince($0.value) < unreachableMemory }.keys)
+    }
+
     /// When the last finished pass's earliest waiting row is due again.
     private(set) var nextRetryAt: Date?
 
@@ -201,6 +231,7 @@ final class SyncService {
         publishDeferral = nil
         lastPublish = nil
         nextRetryAt = nil
+        unreachableSince = [:]
     }
 
     private func finished(_ token: UUID) {
@@ -227,7 +258,9 @@ final class SyncService {
         var fetcher = baseFetcher, publisher = basePublisher
         // One list for the pass: a relay that didn't open for a read isn't
         // waited on again for a later read or for the send.
-        let unreachable = PassTransport.Unreachable()
+        let remembered = rememberedUnreachable()
+        if !remembered.isEmpty { SyncLog.note("not dialed, remembered as not opening", SyncLog.hosts(remembered.sorted { $0.absoluteString < $1.absoluteString })) }
+        let unreachable = PassTransport.Unreachable(remembered)
         fetcher.transport = PassTransport(base: baseFetcher.transport, unreachable: unreachable)
         publisher.transport = PassTransport(base: basePublisher.transport, unreachable: unreachable)
         let bootstrap = RelaySet.defaultRead
@@ -236,9 +269,13 @@ final class SyncService {
         if Task.isCancelled { SyncLog.note("pass stopped", "cancelled after the relay list"); status = .idle; return }
         let set = RelaySet.from(RelaySet.lookup(listResult, owner: owner, bootstrap: bootstrap))
         SyncLog.note("relay set", "read: \(SyncLog.hosts(set.read)); write: \(SyncLog.hosts(set.write))")
-        let journal = await fetcher.fetch(RelayFilter(authors: [owner], kinds: [DailyEntry.kind, 5]), from: set.read)
-        let settingsResult = await fetcher.fetch(
+        // The journal and the settings are read at the same time, each on its
+        // own connections; each keeps its own outcomes (and `.unresolved`).
+        let reader = fetcher
+        async let journalRead = reader.fetch(RelayFilter(authors: [owner], kinds: [DailyEntry.kind, 5]), from: set.read)
+        async let settingsRead = reader.fetch(
             RelayFilter(authors: [owner], kinds: [AppSettings.kind], tagD: [AppSettings.dTag]), from: set.read)
+        let (journal, settingsResult) = await (journalRead, settingsRead)
         // Stopped part-way (backgrounded), or the store or account changed
         // while reading: import nothing.
         SyncLog.note("journal read", "\(journal.events.count) events; \(SyncLog.describe(journal.outcomes))")
@@ -263,8 +300,35 @@ final class SyncService {
         }
         await publish(owner: owner, secret: secret, context: context, set: set,
                       fetcher: fetcher, publisher: publisher, isCurrent: isCurrent)
-        let skipped = unreachable.all.sorted { $0.absoluteString < $1.absoluteString }
+        let skipped = unreachable.all.subtracting(remembered).sorted { $0.absoluteString < $1.absoluteString }
         if !skipped.isEmpty { SyncLog.note("never connected, dialed once", SyncLog.hosts(skipped)) }
+        // Remember them for later passes, unless this pass was stopped or the
+        // account changed (then nothing it learned is kept), or no relay at
+        // all opened: then it's the phone's network that stalled, not those
+        // relays, and remembering them would shut out every relay after the
+        // network is back (Audit #22 M1).
+        let networkWorked = !unreachable.opened.isEmpty
+        if !skipped.isEmpty, !networkWorked { SyncLog.note("not remembered", "no relay opened in this pass") }
+        if !Task.isCancelled, isCurrent(), networkWorked {
+            let at = now()
+            unreachableSince = unreachableSince.filter { at.timeIntervalSince($0.value) < unreachableMemory }
+            // Chief P47 (Audit #22 L1): never remember so many that fewer
+            // than 2 bootstrap relays, or fewer than 2 of the account's write
+            // relays (all of them when it has fewer than 2), stay dialable.
+            // Otherwise a partial stall would block every automatic pass's
+            // two-answer rule until the memory expires.
+            var held: [URL] = []
+            for url in skipped {
+                var next = Set(unreachableSince.keys)
+                next.insert(url)
+                if Self.keepsEnoughDialable(remembered: next, bootstrap: bootstrap, write: set.write) {
+                    unreachableSince[url] = at
+                } else {
+                    held.append(url)
+                }
+            }
+            if !held.isEmpty { SyncLog.note("not remembered", "too few would be left to dial: \(SyncLog.hosts(held))") }
+        }
         if let deferral = publishDeferral { SyncLog.note("publishing deferred", "\(deferral)") }
         if let p = lastPublish {
             SyncLog.note("pass finished", "signed \(p.signed), sent \(p.sent), synced \(p.synced), deferred \(p.deferred), conflicts \(p.conflicts), waiting on deletion \(p.waitingOnDeletion)")
