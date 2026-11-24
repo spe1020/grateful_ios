@@ -11,7 +11,7 @@ enum GDColor {
     static let foreground = dynamic(light: (20, 10, 20), dark: (30, 25, 95))
     static let card = dynamic(light: (0, 0, 100), dark: (20, 20, 14))
     static let secondary = dynamic(light: (35, 100, 94), dark: (25, 20, 20))
-    static let mutedForeground = dynamic(light: (25, 15, 45), dark: (30, 15, 65))
+    static let mutedForeground = dynamic(light: (25, 15, 40), dark: (30, 15, 65))
     static let border = dynamic(light: (30, 25, 88), dark: (25, 15, 22))
     /// Web `--primary`. For tints and icons only: it is too light for body
     /// text on the background.
