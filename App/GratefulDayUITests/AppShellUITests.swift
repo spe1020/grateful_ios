@@ -127,9 +127,16 @@ final class AppShellUITests: XCTestCase {
         let footer = app.buttons["today.localOnly"]
         XCTAssertTrue(footer.exists)
         let bar = app.tabBars.firstMatch.frame
+        // Drag in the left margin, where nothing can be pressed: a swipe from
+        // the middle of the screen can start on "Reflect on this", and the
+        // audit then catches the button's pressed (dimmed) state (CI run
+        // 45298363097). Then wait for the scroll to come to rest.
+        let window = app.windows.firstMatch
         for _ in 0..<5 where footer.frame.maxY > bar.minY {
-            app.scrollViews.firstMatch.swipeUp(velocity: .slow)
+            let start = window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 8, dy: bar.minY - 40))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -300)))
         }
+        Self.waitUntilStill(footer)
         XCTAssertLessThanOrEqual(footer.frame.maxY, bar.minY, "footer clear of the tab bar")
         try app.performAccessibilityAudit { issue in
             Self.log(issue)
@@ -306,6 +313,19 @@ final class AppShellUITests: XCTestCase {
     /// the date changes in between (CI run 45292710132 typed at 23:59:51 UTC
     /// and looked at 00:00:12). Close to midnight, start after it instead.
     /// The app and this runner share the simulator's time zone.
+    /// P55: waits (up to 10 s) until `element` has kept the same frame for
+    /// half a second, so an audit never measures a scroll still settling.
+    static func waitUntilStill(_ element: XCUIElement) {
+        var last = element.frame
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.5)
+            let now = element.frame
+            if now == last { return }
+            last = now
+        }
+    }
+
     static func waitOutMidnight(margin: TimeInterval = 300) {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
