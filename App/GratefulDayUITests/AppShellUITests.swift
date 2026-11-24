@@ -108,11 +108,15 @@ final class AppShellUITests: XCTestCase {
 
     /// Audit M1 L2: system accessibility audit on Today (clipped text,
     /// contrast, missing labels, small hit targets).
+    @MainActor
     func testTodayPassesAccessibilityAudit() throws {
         let app = Self.app()
         app.launch()
         XCTAssertTrue(app.textViews["today.editor"].waitForExistence(timeout: 10))
-        try app.performAccessibilityAudit()
+        try app.performAccessibilityAudit { issue in
+            Self.log(issue)
+            return false
+        }
     }
 
     /// Audit M3a I2: the accessibility audit at the largest text size, on
@@ -254,6 +258,14 @@ final class AppShellUITests: XCTestCase {
     /// against the bar's blur. Only that contrast case is skipped; every
     /// other issue, and contrast anywhere else on screen, still fails.
     @MainActor
+    /// P55: name the element behind an audit failure in the CI log. Never
+    /// ignores the issue: it only prints it before the audit fails.
+    @MainActor
+    private static func log(_ issue: XCUIAccessibilityAuditIssue) {
+        let element = issue.element.map { "\($0.elementType.rawValue) id=\"\($0.identifier)\" label=\"\($0.label)\" frame=\($0.frame)" } ?? "nil"
+        print("A11Y-AUDIT-ISSUE type=\(issue.auditType.rawValue) compact=\"\(issue.compactDescription)\" detail=\"\(issue.detailedDescription)\" element=\(element)")
+    }
+
     private static func isBehindTabBar(_ issue: XCUIAccessibilityAuditIssue, _ app: XCUIApplication) -> Bool {
         guard issue.auditType == .contrast, let element = issue.element else { return false }
         return element.frame.intersects(app.tabBars.firstMatch.frame)
