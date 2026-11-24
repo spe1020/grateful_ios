@@ -116,5 +116,16 @@ jobs:
             -scheme GratefulDay \
             -destination "id=$UDID" \
             -derivedDataPath "$RUNNER_TEMP/DerivedData-UITests" \
+            -resultBundlePath "$RUNNER_TEMP/AppTests.xcresult" \
             -disableAutomaticPackageResolution \
             -skipPackagePluginValidation
+      - name: Upload test results
+        # The .xcresult holds each failure's screenshots and accessibility
+        # audit details, which the log doesn't (Chief P55).
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: AppTests-xcresult
+          path: ${{ runner.temp }}/AppTests.xcresult
+          if-no-files-found: warn
+          retention-days: 14

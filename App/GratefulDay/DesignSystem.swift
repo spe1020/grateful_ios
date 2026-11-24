@@ -64,6 +64,9 @@ enum GDSpacing {
     static let small: CGFloat = 8
     static let medium: CGFloat = 16
     static let large: CGFloat = 24
+    /// Space under a tab's scrolling content so its last line can rise
+    /// above the floating tab bar (P59).
+    static let tabBarClearance: CGFloat = 96
 }
 
 enum GDRadius {

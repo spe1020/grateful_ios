@@ -165,6 +165,9 @@ struct TodayView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollDismissesKeyboard(.interactively)
+            // P59: room below the last line for the floating tab bar, so
+            // "On this iPhone only" can be scrolled fully above it.
+            .contentMargins(.bottom, GDSpacing.tabBarClearance, for: .scrollContent)
             .background(GDColor.background.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .sheet(item: $setAside) { filter in
