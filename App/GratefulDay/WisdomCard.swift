@@ -81,6 +81,8 @@ struct WisdomCard: View {
                 .accessibilityElement(children: .combine)
             }
             Divider()
+            // PROBE (not for merge): low contrast inside the card must be skipped and logged.
+            Text("P62 probe inside the card").foregroundStyle(Color(white: 0.9))
             VStack(alignment: .leading, spacing: GDSpacing.small) {
                 Text("Carry it with you")
                     .font(GDFont.sectionLabel)
