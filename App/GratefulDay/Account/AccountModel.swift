@@ -207,11 +207,11 @@ final class AccountModel {
 
     // MARK: Sign out and remove (design §6, Chief P16)
 
-    /// Entries on this iPhone that haven't reached a relay, for the
-    /// warnings. Nothing syncs before M5b, so every visible entry counts.
-    /// Nil when it can't be read: the action is then blocked.
-    func unsyncedCount(context: ModelContext) -> Int? {
-        try? JournalRepository(context: context, activeOwner: activeOwner).totalReflectionCount()
+    /// What the sign-out warning counts: this account's reflections not yet
+    /// saved to it, and reflections written with no account (#27). Nil when
+    /// it can't be read: the action is then blocked.
+    func unsyncedCount(context: ModelContext) -> JournalRepository.SignOutCounts? {
+        try? JournalRepository(context: context, activeOwner: activeOwner).signOutCounts()
     }
 
     enum SignOutResult: Equatable { case signedOut, stayedSignedIn, unconfirmed, blocked }

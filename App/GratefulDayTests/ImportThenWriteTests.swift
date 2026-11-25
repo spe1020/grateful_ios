@@ -8,13 +8,12 @@ import GratefulDayCore
 /// 2026-11-24).
 ///
 /// On the iPhone, a reflection written ten seconds after an nsec import was
-/// stored with no owner, and stayed that way until the next publish pass.
-/// That is the design, not a leak between accounts: `JournalRepository.save`
-/// creates every new day as a guest row, and the first authorized publish
-/// pass (`FirstConnectSort`) gives it to the connected account before
-/// signing. These tests pin that path end to end:
+/// stored with no owner until the next publish pass, so a different account
+/// connected before that pass could adopt it (#27). Since #27 a day written
+/// while an account is connected is that account's from the moment it is
+/// saved. These tests pin the path end to end:
 ///
-/// - the row is the imported account's to see and to save from the start,
+/// - the row is the imported account's, owned by it, from the start,
 /// - nothing is signed or sent before spec A's disclosure is accepted,
 /// - the first pass after it adopts the row, signs it with the imported key
 ///   and sends it to that account's own relays (its NIP-65 list), and
@@ -80,8 +79,8 @@ final class ImportThenWriteTests: XCTestCase {
 
     /// The device sequence: import, write at once, accept the disclosure.
     /// Before the disclosure nothing leaves the iPhone; the first pass after
-    /// it adopts the day, signs it as the imported account and saves it.
-    func testReflectionWrittenRightAfterImportIsAdoptedAndPublishedByTheFirstAuthorizedPass() async throws {
+    /// it signs the day as the imported account and saves it.
+    func testReflectionWrittenRightAfterImportIsOwnedAtOnceAndPublishedByTheFirstAuthorizedPass() async throws {
         let (secret, owner) = try importAccount()
         let defaults = relays(RelaySet.defaultRead.map { $0.host! })
         let sync = service(defaults)
@@ -91,11 +90,11 @@ final class ImportThenWriteTests: XCTestCase {
         XCTAssertTrue(today.edit("thankful"))
         XCTAssertTrue(today.flush())
 
-        // Stored without an owner for now (every new day is), but it is this
-        // account's day in every way the person can see.
+        // Owned by the connected account from the first save (#27).
         var all = try rows()
         XCTAssertEqual(all.count, 1)
-        XCTAssertNil(all[0].ownerPubkey)
+        XCTAssertEqual(all[0].ownerPubkey, owner)
+        XCTAssertEqual(all[0].entryKey, JournalEntry.key(owner: owner, dateString: day.dateString))
         XCTAssertEqual(all[0].syncState, .localOnly)
         let repo = JournalRepository(context: context, activeOwner: owner)
         XCTAssertEqual(try repo.text(for: day), "thankful")
@@ -107,7 +106,7 @@ final class ImportThenWriteTests: XCTestCase {
         await sync.run(owner: owner, secret: secret, context: context)
         XCTAssertEqual(sync.publishDeferral, .notAllowedYet)
         XCTAssertTrue(defaults.allSatisfy { $0.publishedFrames.isEmpty })
-        XCTAssertNil(try rows()[0].ownerPubkey)
+        XCTAssertEqual(try rows()[0].syncState, .localOnly)
         XCTAssertTrue(try context.fetch(FetchDescriptor<OutboxEvent>()).isEmpty)
 
         // Continue on the sheet, then the pass the app starts after it.
@@ -120,7 +119,7 @@ final class ImportThenWriteTests: XCTestCase {
         XCTAssertEqual(sync.lastPublish?.signed, 1)
         XCTAssertEqual(sync.lastPublish?.synced, 1)
         all = try rows()
-        XCTAssertEqual(all.count, 1, "adopted in place: no second row for the day")
+        XCTAssertEqual(all.count, 1, "no second row for the day")
         XCTAssertEqual(all[0].ownerPubkey, owner)
         XCTAssertEqual(all[0].entryKey, JournalEntry.key(owner: owner, dateString: day.dateString))
         XCTAssertEqual(all[0].syncState, .synced)
