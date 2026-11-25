@@ -182,6 +182,8 @@ final class OwnerAtWriteTests: XCTestCase {
         XCTAssertEqual(AccountCopy.signOutGuestUnsaved(3),
                        "3 reflections written before you signed in haven't been saved yet. They'll stay on this iPhone and can be added to the next account you sign in with.")
         XCTAssertEqual(AccountCopy.signOutGuestUnsaved(1),
-                       "1 reflection written before you signed in hasn't been saved yet. They'll stay on this iPhone and can be added to the next account you sign in with.")
+                       "1 reflection written before you signed in hasn't been saved yet. It'll stay on this iPhone and can be added to the next account you sign in with.")
+        XCTAssertEqual(AccountCopy.signOutUnsynced(1),
+                       "1 reflection hasn't been saved to your account yet. It'll stay on this iPhone and will be saved when you sign back in to this account. It won't be saved to any other account.")
     }
 }

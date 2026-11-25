@@ -60,10 +60,14 @@ enum AccountCopy {
     static let signOutAlways = "Your journal key will be removed from this iPhone. Your reflections stay here, and you can keep writing."
     // Prep, #27 (owner at write time).
     static func signOutUnsynced(_ n: Int) -> String {
-        "\(n) \(n == 1 ? "reflection hasn't" : "reflections haven't") been saved to your account yet. They'll stay on this iPhone and will be saved when you sign back in to this account. They won't be saved to any other account."
+        n == 1
+            ? "1 reflection hasn't been saved to your account yet. It'll stay on this iPhone and will be saved when you sign back in to this account. It won't be saved to any other account."
+            : "\(n) reflections haven't been saved to your account yet. They'll stay on this iPhone and will be saved when you sign back in to this account. They won't be saved to any other account."
     }
     static func signOutGuestUnsaved(_ m: Int) -> String {
-        "\(m) \(m == 1 ? "reflection" : "reflections") written before you signed in \(m == 1 ? "hasn't" : "haven't") been saved yet. They'll stay on this iPhone and can be added to the next account you sign in with."
+        m == 1
+            ? "1 reflection written before you signed in hasn't been saved yet. It'll stay on this iPhone and can be added to the next account you sign in with."
+            : "\(m) reflections written before you signed in haven't been saved yet. They'll stay on this iPhone and can be added to the next account you sign in with."
     }
     static let signOutNoBackup = "There's no backup of your journal key. Without it, you can't sign back in, and your private reflections can't be opened on any other device."
     static let backUpFirst = "Back up first"
