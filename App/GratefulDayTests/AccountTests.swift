@@ -283,7 +283,30 @@ final class AccountTests: XCTestCase {
         let byDate = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<JournalEntry>()).map { ($0.dateString, $0) })
         XCTAssertEqual(byDate["2026-11-20"]?.ownerPubkey, pub)
         XCTAssertEqual(byDate["2026-11-20"]?.notesText, "owned, edited")
-        XCTAssertNil(byDate["2026-11-21"]?.ownerPubkey, "a new row is a guest row until M5b publishes it")
+        XCTAssertEqual(byDate["2026-11-21"]?.ownerPubkey, pub, "a new day is the connected account's at once (#27)")
+    }
+
+    func testSignedOutEditorWritesAGuestRow() throws {
+        let repo = JournalRepository(context: context, activeOwner: nil)
+        try repo.save(text: "no account yet", for: day("2026-11-21"))
+        XCTAssertNil(try context.fetch(FetchDescriptor<JournalEntry>()).first?.ownerPubkey)
+    }
+
+    func testEditingAGuestDayWhileConnectedMakesItTheAccounts() throws {
+        try insert("written before signing in", on: "2026-11-21", owner: nil)
+        let pub = try account.createKey(context: context)
+        let repo = JournalRepository(context: context, activeOwner: pub)
+        // Reading it doesn't claim it.
+        XCTAssertEqual(try repo.text(for: day("2026-11-21")), "written before signing in")
+        try repo.save(text: "written before signing in", for: day("2026-11-21"))
+        XCTAssertNil(try context.fetch(FetchDescriptor<JournalEntry>()).first?.ownerPubkey, "an unchanged save claims nothing")
+        try repo.save(text: "written before signing in\n\nand after", for: day("2026-11-21"))
+        let rows = try context.fetch(FetchDescriptor<JournalEntry>())
+        XCTAssertEqual(rows.count, 1, "claimed in place")
+        XCTAssertEqual(rows[0].ownerPubkey, pub)
+        XCTAssertEqual(rows[0].entryKey, JournalEntry.key(owner: pub, dateString: "2026-11-21"))
+        XCTAssertEqual(rows[0].syncState, .localOnly)
+        XCTAssertNil(rows[0].remoteEventID)
     }
 
     func testCalendarShowsSignedOutAccountDaysReadOnly() throws {

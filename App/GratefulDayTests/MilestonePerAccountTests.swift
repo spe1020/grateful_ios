@@ -65,12 +65,8 @@ final class MilestonePerAccountTests: XCTestCase {
             try repoA.save(text: "a\(i)", for: day(date(i)))
             _ = try repoA.takeMilestone()
         }
-        // The guest rows above counted for A while A was active; make them A's.
-        for row in try context.fetch(FetchDescriptor<JournalEntry>()) where row.ownerPubkey == nil {
-            row.ownerPubkey = a
-            row.entryKey = JournalEntry.key(owner: a, dateString: row.dateString)
-        }
-        try context.save()
+        // Written while A was connected, so they are A's rows (#27).
+        XCTAssertTrue(try context.fetch(FetchDescriptor<JournalEntry>()).allSatisfy { $0.ownerPubkey == a })
         let repoB = JournalRepository(context: context, activeOwner: b)
         for i in 0..<29 {
             try repoB.save(text: "b\(i)", for: day(date(100 + i)))

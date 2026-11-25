@@ -390,8 +390,11 @@ struct SignOutView: View {
             VStack(alignment: .leading, spacing: GDSpacing.medium) {
                 Text(AccountCopy.signOutHeading).font(.title2.weight(.semibold))
                 Text(AccountCopy.signOutAlways)
-                if let unsynced, unsynced > 0 {
-                    Text(AccountCopy.signOutUnsynced(unsynced)).accessibilityIdentifier("signOut.unsynced")
+                if let unsynced, unsynced.unsaved > 0 {
+                    Text(AccountCopy.signOutUnsynced(unsynced.unsaved)).accessibilityIdentifier("signOut.unsynced")
+                }
+                if let unsynced, unsynced.guest > 0 {
+                    Text(AccountCopy.signOutGuestUnsaved(unsynced.guest)).accessibilityIdentifier("signOut.guestUnsaved")
                 }
                 if !hasBackup {
                     Text(AccountCopy.signOutNoBackup).accessibilityIdentifier("signOut.noBackup")

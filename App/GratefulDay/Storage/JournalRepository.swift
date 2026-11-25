@@ -10,6 +10,13 @@ import GratefulDayCore
 /// out). Rows the person sees and writes are guest rows plus the active
 /// owner's rows. Rows owned by any other account are read-only and are never
 /// edited, merged or counted here.
+///
+/// Owner at write time (#27, approved by Seth 2026-11-25): a reflection
+/// written while an account is connected belongs to that account from the
+/// moment it is saved, before any publish pass. Only a reflection written
+/// with no account connected is a guest row that a later account can adopt
+/// (`FirstConnectSort`). Otherwise a day written under one account and not
+/// yet sent would be adopted and published by the next account connected.
 extension Notification.Name {
     /// Posted on the main actor after a reflection's text was saved with a
     /// change, or a reflection was deleted, by the person on this iPhone.
@@ -36,8 +43,7 @@ struct JournalRepository {
     }
 
     /// The row the editor reads and writes for a date: the active owner's row
-    /// if there is one, otherwise the guest row (which becomes the owner's
-    /// when M5b publishes it). Includes deletion tombstones.
+    /// if there is one, otherwise the guest row. Includes deletion tombstones.
     func entry(for dateString: String) throws -> JournalEntry? {
         if let owner = activeOwner, let owned = try row(owner: owner, dateString: dateString) {
             return owned
@@ -51,10 +57,19 @@ struct JournalRepository {
         return entry.notesText
     }
 
-    /// Save the day's text into `entry(for:)`, or a new guest row. The text
-    /// is stored in `EntryNotes` canonical form. A day's identity (date tags
-    /// and time zone) is fixed when its row is first created. Writing to a
+    /// Save the day's text into `entry(for:)`, or a new row owned by the
+    /// active account (a guest row when none is connected). The text is
+    /// stored in `EntryNotes` canonical form. A day's identity (date tags and
+    /// time zone) is fixed when its row is first created. Writing to a
     /// deleted day brings it back. Rows of other accounts are never touched.
+    ///
+    /// Editing a guest row while an account is connected makes it that
+    /// account's (#27): it now holds words written under the account, so it
+    /// must not stay adoptable by another one. This is the same step the
+    /// first publish pass would take for that account (`FirstConnectSort`,
+    /// "only here"), and every later safeguard applies to it as to any
+    /// unsent edit: the pre-send refetch, the conflict screen and
+    /// archive-before-replace.
     @discardableResult
     func save(text: String, for day: JournalDay, now: Date = .now) throws -> JournalEntry {
         let notes = EntryNotes.normalize(text)
@@ -63,6 +78,13 @@ struct JournalRepository {
         if let existing = try self.entry(for: day.dateString) {
             guard existing.syncState != .blocked else { throw RepositoryError.dayIsBlocked }
             changed = existing.notesText != notes || existing.deletedAt != nil
+            if changed, let owner = activeOwner, existing.ownerPubkey == nil {
+                existing.ownerPubkey = owner
+                existing.entryKey = JournalEntry.key(owner: owner, dateString: existing.dateString)
+                existing.syncStateRaw = SyncState.localOnly.rawValue
+                existing.remoteEventID = nil
+                existing.remoteCreatedAt = nil
+            }
             if changed {
                 existing.notesText = notes
                 existing.updatedAt = now
@@ -74,7 +96,7 @@ struct JournalRepository {
         } else {
             entry = JournalEntry(
                 dateString: day.day.dateString, dayOfYear: day.day.dayOfYear, publishedAt: day.day.publishedAt,
-                timeZoneID: day.timeZone.identifier, notesText: notes, now: now, ownerPubkey: nil
+                timeZoneID: day.timeZone.identifier, notesText: notes, now: now, ownerPubkey: activeOwner
             )
             context.insert(entry)
         }
@@ -143,6 +165,21 @@ struct JournalRepository {
     /// row on the same date count once).
     func totalReflectionCount() throws -> Int {
         Set(try visibleReflections().map(\.dateString)).count
+    }
+
+    /// What the sign-out sheet counts (F7, Prep's #27 copy): the active
+    /// account's reflections not yet saved to it (any state but `.synced`),
+    /// and reflections written with no account, which the next account
+    /// signed in can still adopt. Synced days are never counted.
+    struct SignOutCounts: Equatable { var unsaved = 0, guest = 0 }
+
+    func signOutCounts() throws -> SignOutCounts {
+        let rows = try reflections(from: nil, through: nil)
+        let owner = activeOwner
+        return SignOutCounts(
+            unsaved: owner == nil ? 0 : rows.filter { $0.ownerPubkey == owner && $0.syncState != .synced }.count,
+            guest: rows.filter { $0.ownerPubkey == nil }.count
+        )
     }
 
     // MARK: - Other accounts' rows (read-only, P17)
