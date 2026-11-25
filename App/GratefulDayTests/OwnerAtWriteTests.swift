@@ -186,4 +186,54 @@ final class OwnerAtWriteTests: XCTestCase {
         XCTAssertEqual(AccountCopy.signOutUnsynced(1),
                        "1 reflection hasn't been saved to your account yet. It'll stay on this iPhone and will be saved when you sign back in to this account. It won't be saved to any other account.")
     }
+
+    /// Audit's probe on cbf8f67: a guest day edited under C is C's, so D
+    /// neither sees, counts nor sends it.
+    func testAGuestDayEditedUnderCIsNotShownToOrAdoptedByD() async throws {
+        XCTAssertNil(account.activeOwner)
+        write("guest words")
+        XCTAssertNil(try rows().first?.ownerPubkey)
+        let (_, c) = try importAccount()
+        write("guest words\n\nC added")
+        XCTAssertEqual(try rows().first?.ownerPubkey, c)
+        XCTAssertEqual(account.signOut(context: context), .signedOut)
+        let defaults = RelaySet.defaultRead.map { FakeRelay($0.host!) }
+        let sync = service(defaults)
+        let (dSecret, d) = try importAccount()
+        XCTAssertEqual(editor().text, "", "D's editor must not show the guest day C edited")
+        XCTAssertEqual(try PublishDisclosure(context: context, owner: d).pendingCount(), 0)
+        try PublishDisclosure(context: context, owner: d).accept()
+        await sync.run(owner: d, secret: dSecret, context: context)
+        XCTAssertTrue(defaults.allSatisfy { $0.publishedFrames.isEmpty })
+        let all = try rows()
+        XCTAssertEqual(all.count, 1)
+        XCTAssertEqual(all[0].ownerPubkey, c)
+    }
+
+    /// Audit's probe on cbf8f67: reading a guest day under C claims nothing,
+    /// so it stays adoptable.
+    func testAnUntouchedGuestDayIsStillAdoptableByTheNextAccount() async throws {
+        write("guest words")
+        let (_, _) = try importAccount()
+        XCTAssertEqual(editor().text, "guest words", "C sees the guest day")
+        _ = editor().flush()
+        XCTAssertNil(try rows().first?.ownerPubkey, "reading under C claims nothing")
+        XCTAssertEqual(account.signOut(context: context), .signedOut)
+        let defaults = RelaySet.defaultRead.map { FakeRelay($0.host!) }
+        let sync = service(defaults)
+        let (dSecret, d) = try importAccount()
+        XCTAssertEqual(editor().text, "guest words")
+        XCTAssertEqual(try PublishDisclosure(context: context, owner: d).pendingCount(), 1)
+        try PublishDisclosure(context: context, owner: d).accept()
+        await sync.run(owner: d, secret: dSecret, context: context)
+        let all = try rows()
+        XCTAssertEqual(all.count, 1)
+        XCTAssertEqual(all[0].ownerPubkey, d)
+        XCTAssertEqual(all[0].syncState, .synced)
+        for relay in defaults where RelaySet.defaultWrite.contains(relay.url) {
+            let events = try published(relay)
+            XCTAssertEqual(events.count, 1)
+            XCTAssertEqual(try NIP44.decryptFromSelf(events[0].content, privateKey: dSecret), "guest words")
+        }
+    }
 }
