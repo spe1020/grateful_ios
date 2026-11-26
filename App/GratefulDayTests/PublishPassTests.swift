@@ -823,6 +823,47 @@ final class PublishPassTests: XCTestCase {
         XCTAssertEqual(try row("2026-11-20").notesText, "new")
     }
 
+    /// D5 (Phase 1 simulator, B: web kind 5 c9e816d2, then a new iOS
+    /// marker): another device deletes a synced day, this iPhone applies the
+    /// deletion, and the person writes on that day again. Through
+    /// SyncService (read, import, publish) the next pass must sign a new
+    /// 36669 newer than the deletion, with no conflict, although the same
+    /// deletion is read again first. At 10ae4d6 the re-read deletion made
+    /// the day a conflict and nothing was signed. Then (Chief P124) a newer
+    /// deletion from another device still applies: the day ends deleted.
+    func testReviveAfterAppliedRemoteDeletionPublishesAndANewerDeletionStillApplies() async throws {
+        let base = try remote("2026-11-20", "old", at: 100)
+        try entry("2026-11-20", "old", base: base)
+        try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
+        let deletedAt = Int(Date.now.timeIntervalSince1970) - 60
+        let theirs = try kind5("2026-11-20", target: base.id, at: deletedAt)
+        let relays = RelaySet.defaultRead.map { FakeRelay($0.host!, events: [base, theirs]) }
+        let sync = service(relays)
+        await sync.run(owner: owner, secret: secret, context: context)
+        XCTAssertNotNil(try row("2026-11-20").deletedAt, "the other device's deletion applied")
+        XCTAssertEqual(try row("2026-11-20").syncState, .synced)
+
+        try edit("2026-11-20", "written again", at: Date.now)
+        await sync.run(owner: owner, secret: secret, context: context)
+        XCTAssertEqual(sync.lastPublish?.conflicts, 0)
+        XCTAssertEqual(sync.lastPublish?.synced, 1, "the revive is published")
+        var r = try row("2026-11-20")
+        XCTAssertEqual(r.syncState, .synced, "not a conflict")
+        XCTAssertEqual(r.notesText, "written again")
+        let revived = try XCTUnwrap(sent(relays[0]).last { $0.kind == DailyEntry.kind })
+        XCTAssertGreaterThan(revived.createdAt, deletedAt, "signed after the deletion")
+
+        // Another device deletes the day again, after the revive.
+        relays.forEach(keepNewest)
+        let newer = try kind5("2026-11-20", target: revived.id, at: revived.createdAt + 60)
+        relays.forEach { $0.events.append(newer) }
+        await sync.run(owner: owner, secret: secret, context: context)
+        r = try row("2026-11-20")
+        XCTAssertNotNil(r.deletedAt, "the newer deletion applies")
+        XCTAssertEqual(r.notesText, "")
+        XCTAssertEqual(r.syncState, .synced)
+    }
+
     // MARK: - Audit #16 L1
 
     /// L1: the pre-send refetch finds another device's kind 5 on its own
