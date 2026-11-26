@@ -48,14 +48,18 @@ Screen text and behaviour were read from source at `cfd6097`; the clipboard step
 - **PASS:** the paste fills the field after switching apps, and the other client shows the **same npub**.
 - **FAIL:** nothing to paste within 45 seconds, a different npub, or login rejects the pasted text.
 
-**A2, web decryption:** in a private browser window on gratefulday.space, log in with the same key (open Screen 3, **Copy journal key**, paste into the site's key field within 45 seconds). **PASS:** same account, and the Setup reflection appears and reads the same. If the site offers no key field, record BLOCKED.
+**A2, web decryption:** in a private browser window on gratefulday.space, log in with the same key (open Screen 3, **Copy journal key**, paste into the site's key field within 45 seconds). The site keeps the key in browser storage, so **when A2 is done, log out and then close that private window.** **PASS:** same account, and the Setup reflection appears and reads the same. If the site offers no key field, record BLOCKED.
 
 ## B. The clipboard after 60 seconds
 First, in the other client, return to its empty secret-key login field (log out of the throwaway if you need to).
 1. **Expiry:** open Screen 3, **Copy journal key**, start the timer, switch to the other client and **don't paste** until **75 seconds**. Long-press the empty field.
    - No **Paste** offered: PASS. If **Paste** is offered, tap it: the field stays empty: PASS; the field fills with hidden characters or the key: **FAIL** (don't log in; clear the field).
-2. **A newer copy survives:** Copy the key again. Within 15 seconds, copy the word "banana" in another app on the device (type it, for example, in an unsaved note and copy it). Return to Grateful Day, then go to the Home Screen. At 75 seconds from the key copy, paste into the place you copied "banana" from.
-   - **PASS:** "banana" pastes. **FAIL:** nothing pastes, or the key does (delete it at once and record where it was).
+2. **A newer copy survives:** have two things ready: a web page on the device that shows the word "banana" (any search result or article; copying it must not mean typing or saving it anywhere), and the other client's **empty** secret-key login field. Copy the key in Grateful Day and start the timer. Within 15 seconds, select and copy "banana" on that page. Return to Grateful Day, then go to the Home Screen. At 75 seconds from the key copy, go to the other client's empty secret-key field, long-press and tap **Paste**. **Paste nowhere else**, and don't log in. The field may hide what it shows: use its reveal control only if the content is short enough to be "banana" (6 characters). Never reveal anything longer.
+   - **PASS:** "banana" fills the field.
+   - **FAIL:** the key, or long hidden text, fills it. Don't reveal it or log in; clear the field.
+   - **FAIL:** **Paste** isn't offered, or nothing is pasted: the newer copy was wiped.
+   - **INCONCLUSIVE:** the field masks its text and you can't tell six characters from anything else. Clear it.
+   - Clear the field afterwards.
 
 If A didn't pass, B1 proves nothing: record INCONCLUSIVE.
 
@@ -112,7 +116,9 @@ Opening Control Center makes the app inactive, which should already hide the key
 **G2, screen recording** (§1.7): the same steps with **Screen Recording** in place of mirroring. Expected results are the same. Play the recording back **on the device only**: the key must never be readable after recording starts. Then delete that video from Photos and Recently Deleted. Don't use it as evidence.
 
 ## Finish
-Copy a harmless word on the device and on the Mac. Log the throwaway out of the other client and the browser. Restore Auto-Lock. Mark the key **retired**. Leave Grateful Day's test account in place; any further cleanup needs your own decision.
+Copy a harmless word on the device and on the Mac. Log the throwaway out of the other client. For any browser where you used the key, log out **and close the private window**. Restore Auto-Lock. Mark the key **retired**. Leave Grateful Day's test account in place; any further cleanup needs your own decision.
+
+The other client may have published a profile (kind 0) or a relay list (kind 10002) for the throwaway. A relay list would change which relays Grateful Day uses for that identity. It doesn't affect these checks, but **don't treat this identity as a clean default-relay account in any later test.** Record the client's name with that note.
 
 ## Results
 Each check is **PASS**, **FAIL**, **INCONCLUSIVE**, **BLOCKED** or **SKIPPED**. The sheet passes only if every check passes. A skipped or blocked check leaves that §1.7 item open. Stop the run if the key ends up anywhere these steps don't put it, and record where.
