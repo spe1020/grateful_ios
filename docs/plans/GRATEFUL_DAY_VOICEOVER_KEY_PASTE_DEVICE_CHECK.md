@@ -22,7 +22,7 @@ Build: `10ae4d6`; record the commit. A `git grep` of the app and package sources
 
 ## Setup
 1. Install the build. Open it from its icon, not from Xcode's debugger.
-2. On the Mac, open **Console.app**, select the device, turn on **Action > Include Info Messages**, filter to process `GratefulDay` and category `AXRuntimeNotifications`, and start streaming.
+2. On the Mac, open **Console.app**, select the device, turn on **Action > Include Info Messages**, and start streaming with **no process or category filter**. With real VoiceOver, another process may log the announcement, so don't assume it's the one seen in the Simulator. **Never type the key, or any part of it, into Console's search box.**
 3. On the device, set **Settings > Accessibility > Accessibility Shortcut** to VoiceOver, so a triple-click turns it on and off. Basics: tap selects, double-tap activates, swipe moves, a two-finger tap stops speech.
 4. Turn VoiceOver on. Open Grateful Day: **Settings > Account > Use my Nostr account**.
 
@@ -31,21 +31,22 @@ Build: `10ae4d6`; record the commit. A `git grep` of the app and package sources
 ## A. Control, with a harmless word (no key)
 1. Copy the word "banana" on the device.
 2. Clear the Console window. Edit-menu paste it into the field.
-3. Record what VoiceOver said and whether a Console line ending ", paste" appeared, and whether it showed the word, `<private>` or no text.
-4. Tap **Cancel**, then open **Use my Nostr account** again.
+3. Record what VoiceOver said. Once speech stops, pause Console and search the **message text** for `banana`, still with no process or category filter.
+4. For **every** line from this paste that shows it, write down the process and category (show those columns, or select the line). List **each different pair** in the record table. Check the whole list of results, not only the first line or lines ending ", paste".
+5. Clear the search, resume streaming, tap **Cancel**, then open **Use my Nostr account** again.
 
-If no line appears, check Console's settings and repeat once. If there's still none, go on and listen, but the log results are **INCONCLUSIVE**.
+If the search finds nothing, check Console's settings and repeat once. If there's still nothing, go on and listen, but the log results are **INCONCLUSIVE**.
 
 ## B. Edit-menu paste, with the throwaway key
 1. In a password manager **on the device**, copy the throwaway nsec.
 2. Clear the Console window. Edit-menu paste into the empty field. Listen until speech stops. If it starts reading the key, that's enough: stop it with a two-finger tap.
-3. Record: did the field fill; was any of the key's text spoken (don't count "bullet", "secure text field" or the word "paste"); and what the Console line showed: **key text**, **`<private>`**, **no text** or **no line**.
-4. Watch for one more minute. Clear the Console window. Tap **Cancel**, then open **Use my Nostr account** again.
+3. Record: did the field fill, and was any of the key's text spoken (don't count "bullet", "secure text field" or the word "paste"). Then pause Console. For **each process and category pair recorded in A**, one at a time, filter to exactly that pair, with no message-text search. Read the lines from this paste and record for each pair: **key text**, **`<private>`**, **no text** or **no line**. Remove the filter before the next pair.
+4. Resume streaming and watch for one more minute, then check each pair again. Clear the Console window. Tap **Cancel**, then open **Use my Nostr account** again.
 
 ## C. The app's Paste button, with the same key
 1. Copy the nsec again on the device.
 2. Clear the Console window. Select the app's **Paste** button under the field and double-tap it once. If **Allow Paste** appears, record it and allow it.
-3. Listen and watch as in B, and record the same things. Check every line shown, not only ones ending ", paste".
+3. Listen as in B, then check Console in the same way: every pair from A, one at a time, including B's extra minute. Check every line from this paste, not only ones ending ", paste".
 4. If the field doesn't fill, record **button didn't paste**. C then says nothing about announcements; it belongs to the Paste button check (D3, `GRATEFUL_DAY_IMPORT_PASTE_BUTTON_DEVICE_CHECK.md`). Don't use the edit menu instead.
 5. Tap **Cancel**.
 
@@ -56,16 +57,24 @@ Copy a harmless word. Stop Console streaming, clear its window and quit it. Turn
 | Result | When |
 |---|---|
 | **FAIL: D4** | In B or C, VoiceOver speaks any of the key's text, **or** Console shows any of it. Say which method and which of the two |
-| **PASS** | The field filled, nothing from the key was spoken, the control showed that Console captures these announcements with their text readable, and Console showed no key text for this paste |
-| **INCONCLUSIVE** | Nothing was spoken, but the log can't be judged: no control line, or text shown as `<private>` or missing. Also if you couldn't listen to the whole announcement. Record "not spoken" separately where that's true |
+| **PASS** | The field filled, nothing from the key was spoken, A found at least one line with "banana" readable, **every** pair from A was checked for this paste with readable announcement text, and none showed key text |
+| **INCONCLUSIVE** | Nothing was spoken, but the log can't be judged: A found no "banana" line, or for any pair from A the text is `<private>` or missing, the line is absent, or the pair wasn't checked. Also if you couldn't listen to the whole announcement. Record "not spoken" separately where that's true |
 | **NOT TESTED** | The paste didn't fill the field |
 
 - `<private>` doesn't show whether the key was or wasn't stored. Don't install a logging profile to reveal it.
 - **If C also fails,** moving import to the app's button wouldn't fix D4 by itself. Report it that way.
-- A pass covers only this device, iOS version, build and paste route.
+- A pass covers only this device, iOS version, build and paste route, **and only the processes and categories A found**. It doesn't show the key was logged nowhere else.
 
 ## Record (physical device only)
-| Step | Field filled? | Key spoken? | Console showed | Paste route / Allow Paste | Result |
+**Pairs found in A** (names only, no message text):
+
+| # | Process | Category |
+|---|---|---|
+| 1 | | |
+| 2 | | |
+| 3 (add rows as needed) | | |
+
+| Step | Field filled? | Key spoken? | Console showed, for each pair # | Paste route / Allow Paste | Result |
 |---|---|---|---|---|---|
 | A control ("banana") | | word spoken? | | | n/a |
 | B edit menu | | | | | not run |
