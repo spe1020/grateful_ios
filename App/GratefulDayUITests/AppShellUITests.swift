@@ -138,25 +138,38 @@ final class AppShellUITests: XCTestCase {
         shot.lifetime = .keepAlways
         add(shot)
         XCTAssertLessThanOrEqual(footer.frame.maxY, Self.tabBarTop(app), "the footer is fully above the tab bar")
-        // P101: the Dynamic Type audit cycles the text size, and the scroll
-        // view does not come back to its end: CI run 45725896847 (2026-11-26,
-        // a 22 pt taller wisdom card) asserted the footer at y=627, then the
-        // audit reported it at y=756, its frame across the tab bar, as
-        // "Contrast failed"; sibling runs on the same commit saw text under
-        // the glass bar as "Potentially inaccessible text" (element nil).
-        // So every other audit runs first, on the layout asserted above, and
-        // Dynamic Type runs last, on its own. Nothing is skipped beyond P62.
+        // P101: the audit itself re-renders Today at larger text sizes, and
+        // the scroll view does not come back to its end. That is not only
+        // the Dynamic Type audit: CI run 45730720649 ran every type except
+        // Dynamic Type and the recording still shows the sizes cycling, then
+        // "Potentially inaccessible text" with no element. Which drawn text
+        // that was is not yet known, so each type group runs on its own, in
+        // this order, and logs the layout before it: element detection and
+        // contrast first, on the layout asserted above; text clipping and
+        // Dynamic Type (the likely size changers) last. Every group runs
+        // (continueAfterFailure) so one CI run names every issue and the
+        // group that moved the layout. Nothing is skipped beyond P62.
+        continueAfterFailure = true
         let endFrame = footer.frame
-        try app.performAccessibilityAudit(for: XCUIAccessibilityAuditType.all.subtracting(.dynamicType)) { issue in
-            Self.log(issue)
-            return Self.isWisdomCardContrastFalsePositive(issue, app)
+        let sizeChanging: XCUIAccessibilityAuditType = [.textClipped, .dynamicType]
+        let groups: [(String, XCUIAccessibilityAuditType)] = [
+            ("elementDetection", .elementDetection),
+            ("contrast", .contrast),
+            ("others", XCUIAccessibilityAuditType.all.subtracting([.elementDetection, .contrast]).subtracting(sizeChanging)),
+            ("textClipped", .textClipped),
+            ("dynamicType", .dynamicType),
+        ]
+        for (name, types) in groups {
+            Self.logLayout(app, "before \(name)")
+            if !types.isDisjoint(with: [.elementDetection, .contrast, .textClipped]) {
+                XCTAssertEqual(footer.frame, endFrame, "\(name) is audited on the layout asserted above")
+            }
+            try app.performAccessibilityAudit(for: types) { issue in
+                Self.log(issue)
+                return Self.isWisdomCardContrastFalsePositive(issue, app)
+            }
         }
-        Self.logLayout(app, "after the audit")
-        XCTAssertEqual(footer.frame, endFrame, "the audit measured the layout asserted above")
-        try app.performAccessibilityAudit(for: .dynamicType) { issue in
-            Self.log(issue)
-            return false
-        }
+        Self.logLayout(app, "after the audits")
     }
 
     /// Audit M3a I2: the accessibility audit at the largest text size, on
