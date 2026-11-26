@@ -853,8 +853,17 @@ final class PublishPassTests: XCTestCase {
         let revived = try XCTUnwrap(sent(relays[0]).last { $0.kind == DailyEntry.kind })
         XCTAssertGreaterThan(revived.createdAt, deletedAt, "signed after the deletion")
 
-        // Another device deletes the day again, after the revive.
+        // A second pass after the revive (Audit P125): no conflict, and
+        // nothing is sent again.
         relays.forEach(keepNewest)
+        let framesBefore = relays.map { $0.publishedFrames.count }
+        await sync.run(owner: owner, secret: secret, context: context)
+        XCTAssertEqual(sync.lastPublish?.conflicts ?? 0, 0)
+        XCTAssertEqual(relays.map { $0.publishedFrames.count }, framesBefore, "nothing sent twice")
+        XCTAssertEqual(try row("2026-11-20").syncState, .synced)
+        XCTAssertEqual(try row("2026-11-20").notesText, "written again")
+
+        // Another device deletes the day again, after the revive.
         let newer = try kind5("2026-11-20", target: revived.id, at: revived.createdAt + 60)
         relays.forEach { $0.events.append(newer) }
         await sync.run(owner: owner, secret: secret, context: context)
