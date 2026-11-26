@@ -33,7 +33,8 @@ import GratefulDayCore
 @MainActor
 final class BacklogFirstSyncMeasurement: XCTestCase {
     private static let backlogDays = 60
-    private static let capSeconds: TimeInterval = 15 * 60
+    /// GD_MEASURE_CAP (seconds) overrides the 15-minute default (Chief P135: 1800).
+    private static let capSeconds: TimeInterval = TimeInterval(ProcessInfo.processInfo.environment["GD_MEASURE_CAP"] ?? "") ?? 15 * 60
     private static let pollInterval: Duration = .milliseconds(20)
 
     private struct Pass {
