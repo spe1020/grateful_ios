@@ -133,43 +133,40 @@ final class AppShellUITests: XCTestCase {
             if date.frame == before { break }
         }
         Self.logLayout(app, "at the end")
+        // P140: at the very end, a text line can sit half above the top
+        // edge (wisdom.author, CI run 45773428298), and the Xcode 26 audit
+        // reports a line cut by the screen edge as "Potentially inaccessible
+        // text" with no element. Text scrolled partly off the top is normal
+        // scroll state, not an app defect, so the audit runs at a settled
+        // end position instead: nudge the content back down in small slow
+        // drags until no static text straddles y=0. Fail closed if it never
+        // settles, rather than auditing a frame that can misfire.
+        var settled = Self.textsStraddlingTop(app).isEmpty
+        for _ in 0..<12 where !settled {
+            let start = window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 8, dy: window.frame.height * 0.3))
+            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 20)), withVelocity: .slow, thenHoldForDuration: 0.5)
+            Self.waitUntilStill(date)
+            settled = Self.textsStraddlingTop(app).isEmpty
+            print("A11Y-SETTLE date=\(date.frame.minY) footer=\(footer.frame.maxY) straddling=\(Self.textsStraddlingTop(app))")
+        }
+        Self.logLayout(app, "settled for the audit")
+        let straddling = Self.textsStraddlingTop(app)
+        guard straddling.isEmpty else {
+            XCTFail("no position near the end leaves every text line clear of the top edge: \(straddling)")
+            return
+        }
+        XCTAssertLessThan(date.frame.maxY, 0, "the audit still runs with Today scrolled down, content off the top")
+        XCTAssertLessThanOrEqual(footer.frame.maxY, Self.tabBarTop(app), "the footer is fully above the tab bar")
         let shot = XCTAttachment(screenshot: app.screenshot())
-        shot.name = "Today scrolled to the end"
+        shot.name = "Today at the audited position"
         shot.lifetime = .keepAlways
         add(shot)
-        XCTAssertLessThanOrEqual(footer.frame.maxY, Self.tabBarTop(app), "the footer is fully above the tab bar")
-        // P101: the audit itself re-renders Today at larger text sizes, and
-        // the scroll view does not come back to its end. That is not only
-        // the Dynamic Type audit: CI run 45730720649 ran every type except
-        // Dynamic Type and the recording still shows the sizes cycling, then
-        // "Potentially inaccessible text" with no element. Which drawn text
-        // that was is not yet known, so each type group runs on its own, in
-        // this order, and logs the layout before it: element detection and
-        // contrast first, on the layout asserted above; text clipping and
-        // Dynamic Type (the likely size changers) last. Every group runs
-        // (continueAfterFailure) so one CI run names every issue and the
-        // group that moved the layout. Nothing is skipped beyond P62.
-        continueAfterFailure = true
-        let endFrame = footer.frame
-        let sizeChanging: XCUIAccessibilityAuditType = [.textClipped, .dynamicType]
-        let groups: [(String, XCUIAccessibilityAuditType)] = [
-            ("elementDetection", .elementDetection),
-            ("contrast", .contrast),
-            ("others", XCUIAccessibilityAuditType.all.subtracting([.elementDetection, .contrast]).subtracting(sizeChanging)),
-            ("textClipped", .textClipped),
-            ("dynamicType", .dynamicType),
-        ]
-        for (name, types) in groups {
-            Self.logLayout(app, "before \(name)")
-            if !types.isDisjoint(with: [.elementDetection, .contrast, .textClipped]) {
-                XCTAssertEqual(footer.frame, endFrame, "\(name) is audited on the layout asserted above")
-            }
-            try app.performAccessibilityAudit(for: types) { issue in
-                Self.log(issue)
-                return Self.isWisdomCardContrastFalsePositive(issue, app)
-            }
+        // One plain audit of every type. The only exemption is P60/P62's
+        // contrast skip inside the wisdom card.
+        try app.performAccessibilityAudit { issue in
+            Self.log(issue)
+            return Self.isWisdomCardContrastFalsePositive(issue, app)
         }
-        Self.logLayout(app, "after the audits")
     }
 
     /// Audit M3a I2: the accessibility audit at the largest text size, on
@@ -337,6 +334,14 @@ final class AppShellUITests: XCTestCase {
         guard !cardFrame.isEmpty, !issueFrame.isEmpty, cardFrame.contains(issueFrame) else { return false }
         print("A11Y-AUDIT-SKIPPED P62 type=\(issue.auditType.rawValue) id=\"\(element.identifier)\" label=\"\(element.label)\" frame=\(issueFrame) card=\(cardFrame)")
         return true
+    }
+
+    /// P140: the static texts cut by the top edge of the screen.
+    @MainActor
+    static func textsStraddlingTop(_ app: XCUIApplication) -> [String] {
+        app.staticTexts.allElementsBoundByIndex
+            .filter { $0.exists && $0.frame.minY < 0 && $0.frame.maxY > 0 }
+            .map { "\($0.identifier.isEmpty ? "(no id)" : $0.identifier) \($0.frame)" }
     }
 
     /// The top of the drawn tab bar, taken from its buttons (P59).
