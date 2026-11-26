@@ -893,12 +893,14 @@ final class PublishPassTests: XCTestCase {
         return SyncService(fetcher: fetcher, publisher: publisher)
     }
 
-    /// D1/P102, as seen live (a4ecea5b, then 08cfdfca): iOS sends an edit,
-    /// two write relays acknowledge it, and the app is killed during the
-    /// re-check after the send, before markSynced. On relaunch the next
-    /// pass runs that re-check and marks the day synced; the web's later
-    /// edit, based on iOS's event, then replaces it (archived first) as for
-    /// any synced day, not as a conflict. At 10ae4d6 nothing ever marks it
+    /// D1/P102: iOS sends an edit, two write relays acknowledge it, and the
+    /// app is killed during the re-check after the send, before markSynced.
+    /// On relaunch the next pass runs that re-check and marks the day
+    /// synced; a web edit made after that recovery, based on iOS's event,
+    /// then replaces it (archived first) as for any synced day, not as a
+    /// conflict. (In the live repro, a4ecea5b then 08cfdfca, the web edit
+    /// landed before the relaunch; that order is still a conflict by design,
+    /// see `owedRecheck`.) At 10ae4d6 nothing ever marks it
     /// synced: the day keeps its old base and the web edit is a conflict.
     func testPassKilledBeforeMarkSyncedIsMarkedSyncedNextPassAndLaterRemoteEditImports() async throws {
         executionTimeAllowance = 60
