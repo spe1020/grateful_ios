@@ -2,7 +2,9 @@ import Foundation
 
 /// Account copy, verbatim from Prep's final M5 flows
 /// (`PLANS/GRATEFUL_DAY_IOS_M5_FLOWS_AND_COPY_2026_11_21.md`). Change only
-/// together with that document. "nsec" appears only on the import screen.
+/// together with that document. "nsec" appears only on the import screen
+/// (`importPrompt`) and on the export intro (`exportIntroBody1`): S6, and
+/// Prep's final export copy (`PLANS/GRATEFUL_DAY_IOS_KEY_EXPORT_AND_SAVE_SYNC_PRODUCT_2026_11_22.md`).
 enum AccountCopy {
     // F1
     static let connectHeading = "Keep your reflections safe"
@@ -115,4 +117,32 @@ enum AccountCopy {
     static func otherAccountKept(_ n: Int) -> String {
         "\(n) earlier \(n == 1 ? "reflection" : "reflections") from another account \(n == 1 ? "is" : "are") kept on this iPhone."
     }
+
+    // Export (show journal key). Prep's final strings, "Part 1 — Final UX
+    // and security copy" in the key export doc. Change only with that doc.
+    static let exportSection = "Advanced"
+    static let exportRow = "Use your journal key in another app"
+    static let exportTitle = "Journal key"
+    static let exportIntroHeading = "Your journal key is your account"
+    static let exportIntroBody1 = "Your journal key is your Nostr secret key (nsec). Paste it into another Nostr app to use the same account there."
+    static let exportIntroBody2 = "Anyone who has it can read all your private reflections, including earlier versions, and save to your account as you. This can't be undone by changing a password. There isn't one."
+    static let exportBullets = [
+        "Only paste it into an app you trust.",
+        "Never send it in a message or email, or post it.",
+        "No one from Grateful Day will ever ask you for it.",
+    ]
+    static let exportShow = "Show journal key"
+    /// Also `NSFaceIDUsageDescription` in the app target's Info.plist settings.
+    static let exportAuthReason = "Confirm it's you to show your journal key."
+    static let exportNoPasscode = "To show your journal key, turn on a passcode for this iPhone in Settings."
+    static let exportAccount = "Account"
+    static let exportReveal = "Show"
+    static let exportConceal = "Hide"
+    static let exportCopy = "Copy journal key"
+    static let exportCopied = "Copied. It will be cleared from the clipboard in 1 minute. Paste it now."
+    static let exportCaptured = "Your screen is being recorded or shared, so your key is hidden."
+    static let exportScreenshot = "Your screenshot includes your journal key. Delete it from Photos, and from Recently Deleted."
+    static let exportHiddenLabel = "Journal key, hidden"
+    static let exportVoiceOverHint = "VoiceOver reads your key aloud. Use headphones if others are nearby."
+    static let exportDone = "Done"
 }
