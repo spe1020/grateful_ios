@@ -11,7 +11,7 @@ enum GDColor {
     static let foreground = dynamic(light: (20, 10, 20), dark: (30, 25, 95))
     static let card = dynamic(light: (0, 0, 100), dark: (20, 20, 14))
     static let secondary = dynamic(light: (35, 100, 94), dark: (25, 20, 20))
-    static let mutedForeground = dynamic(light: (25, 15, 45), dark: (30, 15, 65))
+    static let mutedForeground = dynamic(light: (25, 15, 40), dark: (30, 15, 65))
     static let border = dynamic(light: (30, 25, 88), dark: (25, 15, 22))
     /// Web `--primary`. For tints and icons only: it is too light for body
     /// text on the background.
@@ -56,6 +56,7 @@ enum GDFont {
     static let dateTitle = Font.system(.largeTitle, design: .serif).weight(.semibold)
     static let sectionLabel = Font.subheadline.weight(.medium)
     static let body = Font.body
+    static let wisdomPassage = Font.system(.title3, design: .serif)
 }
 
 /// Spacing scale (points).
@@ -63,6 +64,9 @@ enum GDSpacing {
     static let small: CGFloat = 8
     static let medium: CGFloat = 16
     static let large: CGFloat = 24
+    /// Space under a tab's scrolling content so its last line can rise
+    /// above the floating tab bar (P59).
+    static let tabBarClearance: CGFloat = 96
 }
 
 enum GDRadius {

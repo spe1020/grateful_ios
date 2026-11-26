@@ -43,4 +43,23 @@ final class DayAndWisdomTests: XCTestCase {
         for s in lib.schedules { for id in s.itemIds { XCTAssertNotNil(lib.items[id], id) } }
         XCTAssertFalse(lib.items.isEmpty)
     }
+
+    /// Spec §1.8: a day rebuilt from stored identity keeps every web-computed
+    /// field, in every zone, including the alt text's date.
+    func testDayFromStoredIdentityMatchesWeb() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "web_dates", withExtension: "json", subdirectory: "Fixtures"))
+        let fixture = try JSONDecoder().decode(Dates.self, from: Data(contentsOf: url))
+        for zone in fixture.zones {
+            for row in zone.rows {
+                let day = try XCTUnwrap(DailyEntry.Day(dateString: row.d, dayOfYear: row.day, publishedAt: row.published_at))
+                XCTAssertEqual(day.dateString, row.d)
+                XCTAssertEqual(day.dayOfYear, row.day)
+                XCTAssertEqual(day.publishedAt, row.published_at)
+                let event = try DailyEntry.template(day: day, notes: ["x"])
+                XCTAssertEqual(event.tags.first { $0.first == "alt" }?[1], row.alt, "\(zone.tz) \(row.d)")
+            }
+        }
+        XCTAssertNil(DailyEntry.Day(dateString: "2026-02-30", dayOfYear: 61, publishedAt: 1))
+        XCTAssertNil(DailyEntry.Day(dateString: "2026-02-01", dayOfYear: 0, publishedAt: 1))
+    }
 }

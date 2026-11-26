@@ -1,30 +1,25 @@
 import SwiftUI
 
-/// Calendar placeholder. The month view arrives in M3.
-struct CalendarPlaceholderView: View {
-    var body: some View {
-        NavigationStack {
-            PlaceholderBody()
-                .navigationTitle("Calendar")
-        }
-    }
-}
-
-/// Settings placeholder. Privacy (M2) and the rest fill this in later.
+/// Settings. Privacy holds the pre-account statement.
 struct SettingsPlaceholderView: View {
+    @Environment(ReminderModel.self) private var reminder
+
     var body: some View {
         NavigationStack {
-            PlaceholderBody()
-                .navigationTitle("Settings")
+            List {
+                NavigationLink("Account") { AccountView() }
+                    .accessibilityIdentifier("settings.account")
+                NavigationLink("Privacy") { PrivacyView() }
+                    .accessibilityIdentifier("settings.privacy")
+                NavigationLink {
+                    ReminderView(model: reminder)
+                } label: {
+                    LabeledContent("Daily reminder", value: reminder.isOn
+                        ? reminder.time.formatted(date: .omitted, time: .shortened) : "Off")
+                }
+                .accessibilityIdentifier("settings.reminder")
+            }
+            .navigationTitle("Settings")
         }
-    }
-}
-
-/// An intentionally empty, calm screen: just the background.
-private struct PlaceholderBody: View {
-    var body: some View {
-        GDColor.background
-            .ignoresSafeArea()
-            .accessibilityHidden(true)
     }
 }

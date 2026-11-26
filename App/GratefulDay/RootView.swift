@@ -15,7 +15,7 @@ struct RootView: View {
             TodayView()
                 .tabItem { Label("Today", systemImage: "sun.max") }
                 .tag(AppTab.today)
-            CalendarPlaceholderView()
+            CalendarView(selection: $selection)
                 .tabItem { Label("Calendar", systemImage: "calendar") }
                 .tag(AppTab.calendar)
             SettingsPlaceholderView()
@@ -26,5 +26,5 @@ struct RootView: View {
     }
 }
 
-#Preview("Light") { RootView() }
-#Preview("Dark") { RootView().preferredColorScheme(.dark) }
+#Preview("Light") { RootView().environment(JournalStore()).environment(ReminderModel()).environment(AccountModel()).environment(SyncService()) }
+#Preview("Dark") { RootView().environment(JournalStore()).environment(ReminderModel()).environment(AccountModel()).environment(SyncService()).preferredColorScheme(.dark) }

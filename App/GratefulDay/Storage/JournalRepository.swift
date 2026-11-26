@@ -1,0 +1,414 @@
+import Foundation
+import SwiftData
+import GratefulDayCore
+
+/// Reads and writes journal entries. Every write is saved to disk before it
+/// returns: there is no batching, so a completed save survives force quit.
+///
+/// Ownership (design r3.1, Chief P17): `activeOwner` is the connected
+/// account's pubkey, or nil when no account is connected (guest or signed
+/// out). Rows the person sees and writes are guest rows plus the active
+/// owner's rows. Rows owned by any other account are read-only and are never
+/// edited, merged or counted here.
+///
+/// Owner at write time (#27, approved by Seth 2026-11-25): a reflection
+/// written while an account is connected belongs to that account from the
+/// moment it is saved, before any publish pass. Only a reflection written
+/// with no account connected is a guest row that a later account can adopt
+/// (`FirstConnectSort`). Otherwise a day written under one account and not
+/// yet sent would be adopted and published by the next account connected.
+extension Notification.Name {
+    /// Posted on the main actor after a reflection's text was saved with a
+    /// change, or a reflection was deleted, by the person on this iPhone.
+    /// Carries nothing: no text, date or account. The app uses it to start a
+    /// pass after a save (`SyncService.localChangeSaved`).
+    static let journalEdited = Notification.Name("GratefulDay.journalEdited")
+}
+
+enum RepositoryError: Error, Equatable {
+    /// The day's relay version couldn't be read; its row is read-only.
+    case dayIsBlocked
+}
+
+@MainActor
+struct JournalRepository {
+    let context: ModelContext
+    var activeOwner: String? = nil
+
+    private func row(owner: String?, dateString: String) throws -> JournalEntry? {
+        let key: String? = JournalEntry.key(owner: owner, dateString: dateString)
+        var d = FetchDescriptor<JournalEntry>(predicate: #Predicate { $0.entryKey == key })
+        d.fetchLimit = 1
+        return try context.fetch(d).first
+    }
+
+    /// The row the editor reads and writes for a date: the active owner's row
+    /// if there is one, otherwise the guest row. Includes deletion tombstones.
+    func entry(for dateString: String) throws -> JournalEntry? {
+        if let owner = activeOwner, let owned = try row(owner: owner, dateString: dateString) {
+            return owned
+        }
+        return try row(owner: nil, dateString: dateString)
+    }
+
+    /// The day's reflection text, or "" when there is none (or it was deleted).
+    func text(for day: JournalDay) throws -> String {
+        guard let entry = try entry(for: day.dateString), entry.deletedAt == nil else { return "" }
+        return entry.notesText
+    }
+
+    /// Save the day's text into `entry(for:)`, or a new row owned by the
+    /// active account (a guest row when none is connected). The text is
+    /// stored in `EntryNotes` canonical form. A day's identity (date tags and
+    /// time zone) is fixed when its row is first created. Writing to a
+    /// deleted day brings it back. Rows of other accounts are never touched.
+    ///
+    /// Editing a guest row while an account is connected makes it that
+    /// account's (#27): it now holds words written under the account, so it
+    /// must not stay adoptable by another one. This is the same step the
+    /// first publish pass would take for that account (`FirstConnectSort`,
+    /// "only here"), and every later safeguard applies to it as to any
+    /// unsent edit: the pre-send refetch, the conflict screen and
+    /// archive-before-replace.
+    @discardableResult
+    func save(text: String, for day: JournalDay, now: Date = .now) throws -> JournalEntry {
+        let notes = EntryNotes.normalize(text)
+        let entry: JournalEntry
+        var changed = true
+        if let existing = try self.entry(for: day.dateString) {
+            guard existing.syncState != .blocked else { throw RepositoryError.dayIsBlocked }
+            changed = existing.notesText != notes || existing.deletedAt != nil
+            if changed, let owner = activeOwner, existing.ownerPubkey == nil {
+                existing.ownerPubkey = owner
+                existing.entryKey = JournalEntry.key(owner: owner, dateString: existing.dateString)
+                existing.syncStateRaw = SyncState.localOnly.rawValue
+                existing.remoteEventID = nil
+                existing.remoteCreatedAt = nil
+            }
+            if changed {
+                existing.notesText = notes
+                existing.updatedAt = now
+                existing.deletedAt = nil
+                // An edit after sync is a pending local edit (M5b plan).
+                if existing.syncState == .synced { existing.syncStateRaw = SyncState.localOnly.rawValue }
+            }
+            entry = existing
+        } else {
+            entry = JournalEntry(
+                dateString: day.day.dateString, dayOfYear: day.day.dayOfYear, publishedAt: day.day.publishedAt,
+                timeZoneID: day.timeZone.identifier, notesText: notes, now: now, ownerPubkey: activeOwner
+            )
+            context.insert(entry)
+        }
+        try context.save()
+        if changed { NotificationCenter.default.post(name: .journalEdited, object: nil) }
+        return entry
+    }
+
+    /// Delete the day's reflection locally. The row stays as a tombstone
+    /// (`deletedAt`, keeping its `d` tag and any remote id) so M5b can apply
+    /// web's NIP-09 deletion; the text itself is cleared now.
+    func delete(_ day: JournalDay, now: Date = .now) throws {
+        guard let entry = try entry(for: day.dateString), entry.deletedAt == nil else { return }
+        guard entry.syncState != .blocked else { throw RepositoryError.dayIsBlocked }
+        entry.notesText = ""
+        entry.deletedAt = now
+        entry.updatedAt = now
+        // A delete after sync is pending until its kind 5 is delivered (M5b-2).
+        if entry.syncState == .synced { entry.syncStateRaw = SyncState.localOnly.rawValue }
+        try context.save()
+        NotificationCenter.default.post(name: .journalEdited, object: nil)
+    }
+
+    /// Non-empty, non-deleted rows in a date range, any owner.
+    private func reflections(from start: String?, through end: String?) throws -> [JournalEntry] {
+        let lo = start ?? "", hi = end ?? "9999-12-31"
+        var d = FetchDescriptor<JournalEntry>(predicate: #Predicate {
+            $0.dateString >= lo && $0.dateString <= hi && $0.deletedAt == nil && $0.notesText != ""
+        })
+        d.propertiesToFetch = [\.dateString, \.ownerPubkey]
+        return try context.fetch(d)
+    }
+
+    /// Visible rows: guest plus active owner.
+    private func visibleReflections(from start: String? = nil, through end: String? = nil) throws -> [JournalEntry] {
+        try reflections(from: start, through: end).filter { $0.ownerPubkey == nil || $0.ownerPubkey == activeOwner }
+    }
+
+    /// The most recent date before `dateString` that has a visible reflection.
+    func latestReflectionDate(before dateString: String) throws -> String? {
+        try visibleReflections().map(\.dateString).filter { $0 < dateString }.max()
+    }
+
+    // MARK: - Calendar and counts
+
+    /// Dates with a visible reflection between two `YYYY-MM-DD` dates, inclusive.
+    func reflectionDates(from start: String, through end: String) throws -> Set<String> {
+        Set(try visibleReflections(from: start, through: end).map(\.dateString))
+            .union(try blockedDates(from: start, through: end))
+    }
+
+    /// The active account's days whose relay version can't be read. Marked in
+    /// the calendar even with no local text: never shown as empty (Audit M2,
+    /// spec §1.3, test plan B9).
+    func blockedDates(from start: String, through end: String) throws -> Set<String> {
+        guard let owner = activeOwner else { return [] }
+        let o: String? = owner, raw = SyncState.blocked.rawValue
+        let d = FetchDescriptor<JournalEntry>(predicate: #Predicate {
+            $0.dateString >= start && $0.dateString <= end && $0.deletedAt == nil
+                && $0.ownerPubkey == o && $0.syncStateRaw == raw
+        })
+        return Set(try context.fetch(d).map(\.dateString))
+    }
+
+    /// Days with a visible reflection, in total (a guest row and the owner's
+    /// row on the same date count once).
+    func totalReflectionCount() throws -> Int {
+        Set(try visibleReflections().map(\.dateString)).count
+    }
+
+    /// What the sign-out sheet counts (F7, Prep's #27 copy): the active
+    /// account's reflections not yet saved to it (any state but `.synced`),
+    /// and reflections written with no account, which the next account
+    /// signed in can still adopt. Synced days are never counted.
+    struct SignOutCounts: Equatable { var unsaved = 0, guest = 0 }
+
+    func signOutCounts() throws -> SignOutCounts {
+        let rows = try reflections(from: nil, through: nil)
+        let owner = activeOwner
+        return SignOutCounts(
+            unsaved: owner == nil ? 0 : rows.filter { $0.ownerPubkey == owner && $0.syncState != .synced }.count,
+            guest: rows.filter { $0.ownerPubkey == nil }.count
+        )
+    }
+
+    // MARK: - Other accounts' rows (read-only, P17)
+
+    private func otherAccountReflections(from start: String? = nil, through end: String? = nil) throws -> [JournalEntry] {
+        try reflections(from: start, through: end).filter { $0.ownerPubkey != nil && $0.ownerPubkey != activeOwner }
+    }
+
+    /// Dates where only another (signed-out) account has a reflection.
+    func otherAccountDates(from start: String, through end: String) throws -> Set<String> {
+        Set(try otherAccountReflections(from: start, through: end).map(\.dateString))
+    }
+
+    /// Days with another account's reflection (Prep: "N earlier reflections
+    /// from another account are kept on this iPhone").
+    func otherAccountDayCount() throws -> Int {
+        Set(try otherAccountReflections().map(\.dateString)).count
+    }
+
+    /// Every reflection on this iPhone, any owner (for "Remove account and
+    /// local data", which removes them all).
+    func allReflectionCount() throws -> Int {
+        try reflections(from: nil, through: nil).count
+    }
+
+    /// Read-only text another account wrote on a date, or nil.
+    func otherAccountText(for dateString: String) throws -> String? {
+        try otherAccountReflections(from: dateString, through: dateString).first?.notesText
+    }
+
+    // MARK: - Milestones (totals only, shown once)
+
+    static let milestones = [1, 7, 30, 100, 365]
+
+    /// The milestone to show after a save: only when the total is exactly a
+    /// milestone that hasn't been shown. Every milestone the total has
+    /// passed is recorded as shown, silently when it wasn't hit exactly
+    /// (for example after a large import), so none is ever shown late or
+    /// with the wrong number (Chief P12).
+    ///
+    /// Acknowledgements are kept per account (or for the guest journal), so
+    /// another account on this iPhone still gets its own line (P38, interop
+    /// §2.6). Records from before that count for every account: a line is
+    /// hidden rather than repeated.
+    func takeMilestone(now: Date = .now) throws -> Int? {
+        let total = try totalReflectionCount()
+        let passed = try unshownMilestones(upTo: total)
+        guard !passed.isEmpty else { return nil }
+        try record(passed, now: now)
+        return passed.contains(total) ? total : nil
+    }
+
+    /// After an import: every milestone the account had already passed
+    /// elsewhere is marked as seen and never shown here (Prep §2.6 ruling 3).
+    /// Only crossing a total on this iPhone shows the line.
+    func markPassedMilestonesSeen(now: Date = .now) throws {
+        let passed = try unshownMilestones(upTo: try totalReflectionCount())
+        if !passed.isEmpty { try record(passed, now: now) }
+    }
+
+    private var milestoneScope: String { "milestoneShown|\(activeOwner ?? "guest")|" }
+
+    private func unshownMilestones(upTo total: Int) throws -> [Int] {
+        let legacy = Set(try context.fetch(FetchDescriptor<AcknowledgedMilestone>()).map(\.total))
+        let prefix = milestoneScope
+        let mine = Set(try context.fetch(FetchDescriptor<JournalFlag>(predicate: #Predicate { $0.name.starts(with: prefix) }))
+            .compactMap { Int($0.name.dropFirst(prefix.count)) })
+        return Self.milestones.filter { $0 <= total && !legacy.contains($0) && !mine.contains($0) }
+    }
+
+    private func record(_ milestones: [Int], now: Date) throws {
+        for m in milestones {
+            let name = milestoneScope + String(m)
+            if try !flag(name) { context.insert(JournalFlag(name: name, setAt: now)) }
+        }
+        try context.save()
+    }
+
+    // MARK: - One-time flags
+
+    func flag(_ name: String) throws -> Bool {
+        var d = FetchDescriptor<JournalFlag>(predicate: #Predicate { $0.name == name })
+        d.fetchLimit = 1
+        return try !context.fetch(d).isEmpty
+    }
+
+    func clearFlag(_ name: String) throws {
+        for f in try context.fetch(FetchDescriptor<JournalFlag>(predicate: #Predicate { $0.name == name })) {
+            context.delete(f)
+        }
+        try context.save()
+    }
+
+    func setFlag(_ name: String, now: Date = .now) throws {
+        guard try !flag(name) else { return }
+        context.insert(JournalFlag(name: name, setAt: now))
+        try context.save()
+    }
+
+    // MARK: - Earlier versions (local archive)
+
+    /// Kept-aside versions the person should see (P22), for the active owner
+    /// (or guest) only.
+    func surfacedEarlierVersions() throws -> [EarlierVersion] {
+        try setAsideVersions().filter { !$0.dismissed && $0.reason == .replacedByRemote }
+    }
+
+    /// Set aside (P22, M6): this account's surfaced versions that a relay
+    /// version replaced, or that the person didn't keep on the conflict
+    /// screen, newest first. Dismissing the Today line never removes one,
+    /// and nothing here is ever purged. Conflict copies are excluded; they
+    /// belong to the conflict case, not a replacement.
+    func setAsideVersions() throws -> [EarlierVersion] {
+        let all = try context.fetch(FetchDescriptor<EarlierVersion>(
+            predicate: #Predicate { $0.surfaced },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))
+        return all.filter { $0.ownerPubkey == activeOwner && $0.reason.isSetAside }
+    }
+
+    /// The day view's "An earlier version… is in Set aside" line: §12 items
+    /// are in Set aside only, never on the day (Prep).
+    func dayLineSetAsideVersions(_ dateString: String) throws -> [EarlierVersion] {
+        try setAsideVersions().filter { $0.dateString == dateString && $0.reason != .writtenBeforeConnectingDeleted }
+    }
+
+    /// Hide the Today line for these versions. Nothing is deleted.
+    func dismissEarlierVersions(_ ids: [UUID]) throws {
+        for v in try setAsideVersions() where ids.contains(v.id) { v.dismissed = true }
+        try context.save()
+    }
+
+    /// Chief P25: whether a day shows "On this iPhone only". Guests always
+    /// do. On an account, only a day imported from relays whose text still
+    /// matches that version (`.synced`; any local edit makes it `.localOnly`)
+    /// drops the label. Days written or edited here, and days whose state
+    /// can't be read, keep it (they become M5b-2's Saving mark).
+    func showsLocalOnlyLabel(_ dateString: String) -> Bool {
+        guard activeOwner != nil else { return true }
+        // No row yet, or unreadable: only here.
+        guard let row = try? entry(for: dateString) else { return true }
+        return row.syncState != .synced
+    }
+
+    /// Chief P42 (Prep's ruling): a day that's public on the account says so
+    /// wherever it's shown or edited, because editing it on iOS republishes it
+    /// in plaintext. Only the active account's day that came from relays as
+    /// public shows the line. Private days, guest days and days that exist
+    /// only on this iPhone show nothing new. Nothing about publishing changes.
+    func showsPublicLabel(_ dateString: String) -> Bool {
+        guard let owner = activeOwner, let row = try? entry(for: dateString) else { return false }
+        return row.ownerPubkey == owner && !row.isPrivate && row.remoteEventID != nil
+            && row.deletedAt == nil && !EntryNotes.split(row.notesText).isEmpty
+    }
+
+    /// What a day says about where it's saved (flows doc, "Incomplete sync").
+    enum DayMark: Equatable {
+        /// Guest: "On this iPhone only".
+        case localOnly
+        /// An account day not yet acknowledged by 2 write relays.
+        case saving
+        /// Saved to the account, or nothing to save.
+        case none
+    }
+
+    /// Prep's "Which days get the mark": only days the app is actually
+    /// sending. Before spec A is accepted for this account nothing is being
+    /// tried, so unsaved days stay "On this iPhone only". Days waiting on a
+    /// choice, blocked or too long to save show their own day line instead.
+    func dayMark(_ dateString: String) -> DayMark {
+        guard activeOwner != nil else { return .localOnly }
+        let found: JournalEntry?
+        do { found = try entry(for: dateString) } catch { return .saving }
+        guard let row = found else { return .none }
+        return mark(for: row)
+    }
+
+    private var publishingAccepted: Bool {
+        guard let owner = activeOwner else { return false }
+        return (try? flag(PublishDisclosure.flagName(owner: owner))) ?? false
+    }
+
+    private func mark(for row: JournalEntry, accepted: Bool? = nil) -> DayMark {
+        guard row.deletedAt == nil, !EntryNotes.split(row.notesText).isEmpty else { return .none }
+        if row.ownerPubkey != nil, row.syncState == .synced { return .none }
+        guard accepted ?? publishingAccepted else { return .localOnly }
+        // A guest row is sorted and sent by the next pass.
+        if row.ownerPubkey == nil { return .saving }
+        switch row.syncState {
+        case .conflict, .blocked, .synced: return .none
+        case .localOnly:
+            return ConflictReview.isTooLong(EntryNotes.join(EntryNotes.split(row.notesText))) ? .none : .saving
+        }
+    }
+
+    /// Rows that show the Saving mark, one per day (the account's row wins).
+    private func savingRows(from start: String? = nil, through end: String? = nil) throws -> [JournalEntry] {
+        guard let owner = activeOwner else { return [] }
+        let accepted = publishingAccepted
+        let lo = start ?? "", hi = end ?? "9999"
+        // A simple predicate: Xcode 26 can't type-check a longer one in time.
+        let inRange = try context.fetch(FetchDescriptor<JournalEntry>(predicate: #Predicate {
+            $0.dateString >= lo && $0.dateString <= hi
+        }))
+        let rows = inRange.filter { $0.ownerPubkey == owner || $0.ownerPubkey == nil }
+        let mine = Set(rows.filter { $0.ownerPubkey == owner }.map { (r: JournalEntry) in r.dateString })
+        return rows.filter { (r: JournalEntry) in
+            (r.ownerPubkey != nil || !mine.contains(r.dateString)) && mark(for: r, accepted: accepted) == .saving
+        }
+    }
+
+    /// The account's days in `start...end` showing the Saving mark.
+    func savingDates(from start: String, through end: String) throws -> Set<String> {
+        Set(try savingRows(from: start, through: end).map { (r: JournalEntry) in r.dateString })
+    }
+
+    /// Days showing the Saving mark for `days` days or more (the Settings line).
+    func longSavingCount(now: Date = .now, days: Int = 7) throws -> Int {
+        let cutoff = now.addingTimeInterval(-TimeInterval(days) * 86_400)
+        return try savingRows().filter { $0.updatedAt <= cutoff }.count
+    }
+
+    /// The editor's row for a date is read-only while its relay version is unreadable.
+    func isBlocked(_ dateString: String) throws -> Bool {
+        try entry(for: dateString)?.syncState == .blocked
+    }
+
+    /// The day an entry belongs to, rebuilt from its stored identity.
+    static func day(of entry: JournalEntry) -> DailyEntry.Day {
+        let zone = TimeZone(identifier: entry.timeZoneID) ?? .current
+        return DailyEntry.Day(containing: Date(timeIntervalSince1970: TimeInterval(entry.publishedAt)), timeZone: zone)
+    }
+}
