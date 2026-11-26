@@ -113,7 +113,7 @@ final class AppShellUITests: XCTestCase {
         let app = Self.app()
         app.launch()
         XCTAssertTrue(app.textViews["today.editor"].waitForExistence(timeout: 10))
-        // P59: one plain audit with Today scrolled to its end (its only
+        // P59: the audit runs with Today scrolled to its end (its only
         // exemption is P60/P62's, below),
         // where "On this iPhone only" must sit fully above the floating tab
         // bar. The pill is measured by its buttons: `tabBars.firstMatch`'s
@@ -138,9 +138,24 @@ final class AppShellUITests: XCTestCase {
         shot.lifetime = .keepAlways
         add(shot)
         XCTAssertLessThanOrEqual(footer.frame.maxY, Self.tabBarTop(app), "the footer is fully above the tab bar")
-        try app.performAccessibilityAudit { issue in
+        // P101: the Dynamic Type audit cycles the text size, and the scroll
+        // view does not come back to its end: CI run 45725896847 (2026-11-26,
+        // a 22 pt taller wisdom card) asserted the footer at y=627, then the
+        // audit reported it at y=756, its frame across the tab bar, as
+        // "Contrast failed"; sibling runs on the same commit saw text under
+        // the glass bar as "Potentially inaccessible text" (element nil).
+        // So every other audit runs first, on the layout asserted above, and
+        // Dynamic Type runs last, on its own. Nothing is skipped beyond P62.
+        let endFrame = footer.frame
+        try app.performAccessibilityAudit(for: XCUIAccessibilityAuditType.all.subtracting(.dynamicType)) { issue in
             Self.log(issue)
             return Self.isWisdomCardContrastFalsePositive(issue, app)
+        }
+        Self.logLayout(app, "after the audit")
+        XCTAssertEqual(footer.frame, endFrame, "the audit measured the layout asserted above")
+        try app.performAccessibilityAudit(for: .dynamicType) { issue in
+            Self.log(issue)
+            return false
         }
     }
 
