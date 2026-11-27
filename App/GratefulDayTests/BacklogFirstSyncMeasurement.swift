@@ -52,6 +52,10 @@ final class BacklogFirstSyncMeasurement: XCTestCase {
         var relayList = ""
         var writeHosts = ""
         var retry = ""
+        /// M: "sockets this pass" (dials/drops/handshake status per relay).
+        var sockets = ""
+        /// Distinct refusal and failure reasons seen in this pass.
+        var reasons: Set<String> = []
     }
 
     func testBacklogFirstSync() async throws {
@@ -176,6 +180,12 @@ final class BacklogFirstSyncMeasurement: XCTestCase {
                     Self.tally(line, into: &passes[i].reads)
                 } else if line.hasPrefix("retry scheduled") {
                     passes[i].retry = Self.detail(line)
+                } else if line.hasPrefix("sockets this pass") {
+                    passes[i].sockets = Self.detail(line)
+                }
+                if line.hasPrefix("sent:") || line.hasPrefix("read before send") || line.hasPrefix("relay list read")
+                    || line.hasPrefix("journal read") || line.hasPrefix("settings read") {
+                    for r in Self.reasons(in: line) { passes[i].reasons.insert(r) }
                 }
             }
 
@@ -225,7 +235,22 @@ final class BacklogFirstSyncMeasurement: XCTestCase {
             if !p.reads.isEmpty { print("P1VAL-BACKLOG-PASS run=\(run) pass=\(p.index) read_before_send: \(Self.render(p.reads))") }
             if !p.sends.isEmpty { print("P1VAL-BACKLOG-PASS run=\(run) pass=\(p.index) sends: \(Self.render(p.sends))") }
             if !p.retry.isEmpty { print("P1VAL-BACKLOG-PASS run=\(run) pass=\(p.index) retry_scheduled: \(p.retry)") }
+            if !p.sockets.isEmpty { print("P1VAL-BACKLOG-PASS run=\(run) pass=\(p.index) sockets: \(p.sockets)") }
+            if !p.reasons.isEmpty { print("P1VAL-BACKLOG-PASS run=\(run) pass=\(p.index) reasons: \(p.reasons.sorted().joined(separator: " | "))") }
         }
+        // For the independent check (Prep §4): the public key and each day's
+        // recorded event id and state. Public data only; never text or key.
+        print("P1VAL-BACKLOG-VERIFY run=\(run) pubkey=\(owner)")
+        do {
+            let o: String? = owner
+            let rows = try context.fetch(FetchDescriptor<JournalEntry>(predicate: #Predicate { $0.ownerPubkey == o }))
+            let byDate = Dictionary(grouping: rows.filter { dates.contains($0.dateString) }, by: \.dateString)
+            print("P1VAL-BACKLOG-VERIFY run=\(run) rows=\(rows.count) dates=\(byDate.count) duplicates=\(byDate.values.filter { $0.count > 1 }.count) "
+                + "conflicts=\(rows.filter { $0.syncStateRaw == SyncState.conflict.rawValue }.count)")
+            for (date, group) in byDate.sorted(by: { $0.key < $1.key }) {
+                for r in group { print("P1VAL-BACKLOG-DAY run=\(run) d=\(date) state=\(r.syncStateRaw) id=\(r.remoteEventID ?? "none")") }
+            }
+        } catch { print("P1VAL-BACKLOG-VERIFY run=\(run) fetch failed") }
         print("P1VAL-BACKLOG run=\(run) days=\(Self.backlogDays) synced=\(synced) seconds=\(String(format: "%.2f", seconds)) "
             + "passes=\(passes.count) write=\(allWrite.sorted().joined(separator: "|").replacingOccurrences(of: " ", with: ",")) "
             + "result=\(synced >= Self.backlogDays ? "complete" : "partial") stop=\"\(stopReason)\"")
@@ -253,6 +278,17 @@ final class BacklogFirstSyncMeasurement: XCTestCase {
         for m in outcome.matches(in: line, range: NSRange(location: 0, length: ns.length)) {
             let host = ns.substring(with: m.range(at: 1)), name = ns.substring(with: m.range(at: 2))
             counts[host, default: [:]][name, default: 0] += 1
+        }
+    }
+
+    private static let reasonPattern = try! NSRegularExpression(
+        pattern: #"([A-Za-z0-9.\-]+)=((?:rejected|failed|closed|unresolved)\([^)]*\))"#)
+
+    /// `host=outcome(reason)` pairs, as logged (hosts and relay text only).
+    private static func reasons(in line: String) -> [String] {
+        let ns = line as NSString
+        return reasonPattern.matches(in: line, range: NSRange(location: 0, length: ns.length)).map {
+            ns.substring(with: $0.range(at: 1)) + "=" + ns.substring(with: $0.range(at: 2))
         }
     }
 
