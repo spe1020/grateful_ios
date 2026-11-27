@@ -9,7 +9,8 @@
 	<!-- Must match the App Store Connect privacy answers. -->
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>
-		<!-- Reflections, sent encrypted to relays that keep them. -->
+		<!-- Reflections, sent to relays that keep them. Private ones are encrypted;
+		     a day already marked public is sent readable. -->
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeOtherUserContent</string>
@@ -38,7 +39,8 @@
 	</array>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
-		<!-- Reminder settings and the removal-incomplete flag: this app only. -->
+		<!-- Non-sensitive app settings and flags (e.g. reminder, removal-incomplete,
+		     selected Today card page): read and written by this app only. -->
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
