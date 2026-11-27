@@ -122,17 +122,21 @@ final class AppShellUITests: XCTestCase {
         let footer = app.staticTexts["On this iPhone only"].firstMatch
         XCTAssertTrue(footer.exists)
         Self.logLayout(app, "at launch")
-        // Drag in the left margin, where nothing can be pressed, until the
-        // date stops moving: the end of the content.
         let window = app.windows.firstMatch
-        for _ in 0..<4 {
-            let before = date.frame
-            let start = window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 8, dy: window.frame.height * 0.7))
-            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -400)))
-            Self.waitUntilStill(date)
-            if date.frame == before { break }
-        }
+        Self.scrollToEnd(app)
         Self.logLayout(app, "at the end")
+        // P59, checked at rest: at the end of the content, with nothing
+        // dragged, the footer sits fully above the tab bar. If it doesn't,
+        // that is an app layout defect, not test timing.
+        let barTop = Self.tabBarTop(app)
+        let atRest = XCTAttachment(screenshot: app.screenshot())
+        atRest.name = "Today at rest at the end"
+        atRest.lifetime = .keepAlways
+        add(atRest)
+        guard footer.frame.maxY <= barTop else {
+            XCTFail("app layout: at the at-rest end of Today the footer (maxY \(footer.frame.maxY)) is under the tab bar (top \(barTop))")
+            return
+        }
         // P140: at the very end, a text line can sit half above the top
         // edge (wisdom.author, CI run 45773428298), and the Xcode 26 audit
         // reports a line cut by the screen edge as "Potentially inaccessible
@@ -141,18 +145,28 @@ final class AppShellUITests: XCTestCase {
         // end position instead: nudge the content back down in small slow
         // drags until no static text straddles y=0. Fail closed if it never
         // settles, rather than auditing a frame that can misfire.
+        // P146: a 20 pt nudge once moved the content 144 pt (CI run
+        // 46004022373), pushing the footer under the tab bar. A drag's
+        // distance doesn't bound the scroll, so each nudge is checked: one
+        // that leaves the footer under the bar is undone by scrolling back
+        // to the end, and the 12 attempts still bound the loop.
         var settled = Self.textsStraddlingTop(app).isEmpty
         for _ in 0..<12 where !settled {
             let start = window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 8, dy: window.frame.height * 0.3))
             start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 20)), withVelocity: .slow, thenHoldForDuration: 0.5)
             Self.waitUntilStill(date)
+            print("A11Y-SETTLE date=\(date.frame.minY) footer=\(footer.frame.maxY) barTop=\(barTop) straddling=\(Self.textsStraddlingTop(app))")
+            if footer.frame.maxY > barTop {
+                print("A11Y-SETTLE overshoot: the footer went under the tab bar; back to the end")
+                Self.scrollToEnd(app)
+                continue
+            }
             settled = Self.textsStraddlingTop(app).isEmpty
-            print("A11Y-SETTLE date=\(date.frame.minY) footer=\(footer.frame.maxY) straddling=\(Self.textsStraddlingTop(app))")
         }
         Self.logLayout(app, "settled for the audit")
         let straddling = Self.textsStraddlingTop(app)
-        guard straddling.isEmpty else {
-            XCTFail("no position near the end leaves every text line clear of the top edge: \(straddling)")
+        guard straddling.isEmpty, footer.frame.maxY <= barTop else {
+            XCTFail("no position near the end leaves every text line clear of the top edge with the footer above the tab bar (top \(barTop)): footer maxY \(footer.frame.maxY), straddling \(straddling)")
             return
         }
         XCTAssertLessThan(date.frame.maxY, 0, "the audit still runs with Today scrolled down, content off the top")
@@ -334,6 +348,21 @@ final class AppShellUITests: XCTestCase {
         guard !cardFrame.isEmpty, !issueFrame.isEmpty, cardFrame.contains(issueFrame) else { return false }
         print("A11Y-AUDIT-SKIPPED P62 type=\(issue.auditType.rawValue) id=\"\(element.identifier)\" label=\"\(element.label)\" frame=\(issueFrame) card=\(cardFrame)")
         return true
+    }
+
+    /// Drags in the left margin, where nothing can be pressed, until the
+    /// date stops moving: the end of Today's content.
+    @MainActor
+    static func scrollToEnd(_ app: XCUIApplication) {
+        let date = app.staticTexts["today.date"]
+        let window = app.windows.firstMatch
+        for _ in 0..<4 {
+            let before = date.frame
+            let start = window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 8, dy: window.frame.height * 0.7))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -400)))
+            waitUntilStill(date)
+            if date.frame == before { break }
+        }
     }
 
     /// P140: the static texts cut by the top edge of the screen.
