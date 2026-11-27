@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 import GratefulDayCore
 
 /// Today: the date, room for the day's wisdom (M4) and the editor, which
@@ -242,36 +243,25 @@ struct TodayView: View {
             editor?.retryIfReadFailed()
             editor?.flush()
         }
-        // Posted on an arbitrary thread: hop to main before touching @State.
-        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
+        // Midnight, a time-zone change or a clock change (spec 10a). Posted on
+        // an arbitrary thread: hop to main before touching @State.
+        .onReceive(TodayDayRefresh.publisher().receive(on: RunLoop.main)) { _ in
+            NSTimeZone.resetSystemTimeZone()
             refreshDay()
         }
     }
 
     private func refreshDay() {
-        let now = JournalDay(containing: .now)
-        guard now != day else { return }
-        guard let editor else {
-            day = now
-            return
-        }
-        editor.dayChanged(to: now)
-        // If saving to the old day failed, the editor stays on it, and so does Today.
-        day = editor.day
+        day = TodayDayRefresh.refresh(current: day, editor: editor, now: .now, timeZone: .current)
     }
 
     /// The Today card's pages, in fixed order: Wisdom, then Affirmation.
     private var cardPages: [TodayCardPage] {
-        var pages: [TodayCardPage] = []
-        if let wisdom = DailyWisdom.item(for: day) {
-            pages.append(TodayCardPage(id: "wisdom", label: TodayCardCopy.wisdomLabel, content: AnyView(
-                WisdomCard(item: wisdom, isPinned: pinnedDay == day.dateString) { pinnedDay = day.dateString })))
-        }
-        if let affirmation = DailyAffirmation.text(for: day) {
-            pages.append(TodayCardPage(id: "affirmation", label: TodayCardCopy.affirmationLabel,
-                                       content: AnyView(AffirmationPage(text: affirmation))))
-        }
-        return pages
+        TodayCardPage.pages(
+            wisdom: DailyWisdom.item(for: day).map { wisdom in
+                AnyView(WisdomCard(item: wisdom, isPinned: pinnedDay == day.dateString) { pinnedDay = day.dateString })
+            },
+            affirmation: DailyAffirmation.text(for: day).map { AnyView(AffirmationPage(text: $0)) })
     }
 
     private func cardSelection(pageIds: [String]) -> Binding<String?> {
@@ -473,5 +463,33 @@ struct OtherAccountEntryView: View {
         }
         .background(GDColor.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// When Today re-checks the date, and what it moves to. The card and the
+/// editor share `TodayView.day`, so they always show the same day (spec 10a).
+enum TodayDayRefresh {
+    /// Midnight, a time-zone change, and a system clock change (Seth's
+    /// decision 3, 58d27316). All run the same existing day-change refresh.
+    static let notifications: [Notification.Name] = [
+        .NSCalendarDayChanged,
+        .NSSystemTimeZoneDidChange,
+        UIApplication.significantTimeChangeNotification,
+    ]
+
+    static func publisher(center: NotificationCenter = .default) -> AnyPublisher<Notification, Never> {
+        Publishers.MergeMany(notifications.map { center.publisher(for: $0) }).eraseToAnyPublisher()
+    }
+
+    /// The day Today shows after a refresh. With an editor, the editor saves
+    /// what's typed to the old day first; if that save fails it stays on the
+    /// old day, and so does Today (no text is lost or moved).
+    @MainActor
+    static func refresh(current: JournalDay, editor: TodayEditorModel?, now: Date, timeZone: TimeZone) -> JournalDay {
+        let today = JournalDay(containing: now, timeZone: timeZone)
+        guard today != current else { return current }
+        guard let editor else { return today }
+        editor.dayChanged(to: today)
+        return editor.day
     }
 }

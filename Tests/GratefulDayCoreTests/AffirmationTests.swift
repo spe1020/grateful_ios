@@ -1,4 +1,5 @@
 import XCTest
+import CryptoKit
 @testable import GratefulDayCore
 
 final class AffirmationTests: XCTestCase {
@@ -57,5 +58,33 @@ final class AffirmationTests: XCTestCase {
                                                                 includingPropertiesForKeys: nil)?.allObjects as? [URL])
         XCTAssertTrue(urls.contains { $0.lastPathComponent == "affirmations.json" })
         XCTAssertFalse(urls.contains { $0.lastPathComponent.lowercased().contains("teaching") }, "\(urls)")
+    }
+
+    /// AC 6, text parity: the bundled lines are exactly the web's 366, in
+    /// order, byte for byte, from the recorded commit. The hash is the one
+    /// gen.ts printed from the web array; Audit regenerates it independently.
+    func testItemsAreTheWebTextFromTheRecordedCommit() throws {
+        let lib = try AffirmationLibrary.bundled()
+        XCTAssertEqual(lib.sourceCommit, "2b15ce6")
+        let digest = SHA256.hash(data: Data(lib.items.joined(separator: "\n").utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(hex, lib.itemsSha256, "items edited without re-export")
+        XCTAssertEqual(hex, "8272031d8a8113c4194234d878ea6c473a7d6c200e5efc2ccdd4fb8c32d21ac1")
+    }
+
+    /// AC 7: the pick depends only on the date string, never the device's
+    /// calendar, zone or locale. Year ends and the 2028 leap day, against the
+    /// web fixture.
+    func testDateBoundariesMatchTheWeb() throws {
+        let lib = try AffirmationLibrary.bundled()
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "affirmation_samples", withExtension: "json", subdirectory: "Fixtures"))
+        let rows = try JSONDecoder().decode(Samples.self, from: Data(contentsOf: url)).rows
+        let web = Dictionary(uniqueKeysWithValues: rows.map { ($0.date, $0.index) })
+        for date in ["2026-12-31", "2027-01-01", "2027-12-31", "2028-01-01", "2028-02-28", "2028-02-29", "2028-03-01", "2028-12-31",
+                     "2026-03-08", "2026-11-01", "2026-03-29", "2026-10-25"] {   // US and EU DST days
+            XCTAssertEqual(lib.index(forDate: date), web[date], date)
+        }
+        XCTAssertEqual(AffirmationLibrary.yearAndDayOfYear("2028-03-01")?.1, 61)
+        XCTAssertEqual(AffirmationLibrary.yearAndDayOfYear("2027-03-01")?.1, 60)
     }
 }

@@ -1,19 +1,28 @@
 import Foundation
 
 /// Daily Affirmations, shared with web via `Resources/affirmations.json`
-/// (exported from gratefulday @ a33f42c). Port of `getAffirmationForDay` in
+/// (exported from gratefulday; the commit is in the file). Port of `getAffirmationForDay` in
 /// `src/lib/gratitudeUtils.ts`; the lines are Grateful Day's own writing.
 public struct AffirmationLibrary: Sendable {
     struct Rotation: Codable, Sendable { let stride: Int; let yearStride: Int }
-    struct File: Codable { let version: Int; let rotation: Rotation; let items: [String] }
+    struct File: Codable {
+        let version: Int; let rotation: Rotation; let items: [String]
+        let sourceCommit: String?; let itemsSha256: String?
+    }
 
     public let items: [String]
     let rotation: Rotation
+    /// The gratefulday commit the items were exported from, and the export's
+    /// SHA-256 of the items joined with "\n" (text parity, spec AC 6).
+    public let sourceCommit: String?
+    public let itemsSha256: String?
 
     public init(data: Data) throws {
         let file = try JSONDecoder().decode(File.self, from: data)
         items = file.items
         rotation = file.rotation
+        sourceCommit = file.sourceCommit
+        itemsSha256 = file.itemsSha256
     }
 
     /// GratefulDayCore's resource bundle.

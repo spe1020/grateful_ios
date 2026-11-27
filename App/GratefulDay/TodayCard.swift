@@ -26,12 +26,29 @@ enum DailyAffirmation {
     }
 }
 
+/// The card's content types, in their fixed order (spec §0–1). `readers`
+/// (Daily Readers) is named only: nothing in the app builds its page until
+/// its content is approved (spec AC 20), so it never shows as an empty page.
+enum TodayCardKind: String, CaseIterable {
+    case wisdom, affirmation, readers
+}
+
 /// One page of the Today card. The pager takes a list of these, so a later
-/// page (Teaching) is one more entry.
+/// page (Daily Readers) is one more entry.
 struct TodayCardPage: Identifiable {
-    let id: String
+    let kind: TodayCardKind
     let label: String
     let content: AnyView
+    var id: String { kind.rawValue }
+
+    /// Today's pages, in `TodayCardKind` order, for the kinds that have
+    /// content today. Only Wisdom and Affirmation have a source.
+    static func pages(wisdom: AnyView?, affirmation: AnyView?) -> [TodayCardPage] {
+        var pages: [TodayCardPage] = []
+        if let wisdom { pages.append(TodayCardPage(kind: .wisdom, label: TodayCardCopy.wisdomLabel, content: wisdom)) }
+        if let affirmation { pages.append(TodayCardPage(kind: .affirmation, label: TodayCardCopy.affirmationLabel, content: affirmation)) }
+        return pages
+    }
 }
 
 /// Which page Today shows. Device-local, never synced: each day opens on the

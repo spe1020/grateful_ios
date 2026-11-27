@@ -1,10 +1,12 @@
 {
- "_about": "Daily Affirmations exported from spe1020/gratefulday @ a33f42c (src/lib/data/dailyAffirmations.ts; byte-identical at 8acb65f). Grateful Day's own writing. Selection (getAffirmationForDay): doy = day of year of the local date (1-366), raw = (doy - 1) * stride + year * yearStride, index = ((raw % n) + n) % n over items in array order.",
+ "_about": "Daily Affirmations exported from spe1020/gratefulday @ 2b15ce6 (src/lib/data/dailyAffirmations.ts). Grateful Day's own writing. Selection (getAffirmationForDay): doy = day of year of the local date (1-366), raw = (doy - 1) * stride + year * yearStride, index = ((raw % n) + n) % n over items in array order. itemsSha256 = SHA-256 of the items joined with \"\\n\" (UTF-8).",
  "version": 1,
+ "sourceCommit": "2b15ce6",
  "rotation": {
   "stride": 53,
   "yearStride": 23
  },
+ "itemsSha256": "8272031d8a8113c4194234d878ea6c473a7d6c200e5efc2ccdd4fb8c32d21ac1",
  "items": [
   "I am worthy of love and happiness.",
   "I choose to see the beauty in each moment.",

@@ -10,6 +10,7 @@ import { buildSettingsEvent, encryptSettings, serializeSettings, parseSettings, 
 import { WISDOM_START_DATE, WISDOM_EXPANDED_START_DATE, WISDOM_ROTATION, getWisdomForDate } from '@/lib/wisdom';
 import { DAILY_WISDOM } from '@/lib/data/dailyWisdom';
 import { DAILY_AFFIRMATIONS } from '@/lib/data/dailyAffirmations';
+import TEACHINGS from '@/lib/data/teachings.json';
 
 const out = process.argv[2];
 const mode = process.argv[3] ?? 'events';
@@ -108,12 +109,38 @@ if (mode === 'events') {
 } else if (mode === 'affirmations') {
   // Strides are those in gratitudeUtils.ts getAffirmationForDay; the
   // affirmation-samples fixture pins them against the web function itself.
+  // GD_WEB_COMMIT: the gratefulday commit this checkout is at (recorded, required).
+  const commit = process.env.GD_WEB_COMMIT;
+  if (!commit) throw new Error('set GD_WEB_COMMIT to the gratefulday commit');
   writeFileSync(out, JSON.stringify({
-    _about: 'Daily Affirmations exported from spe1020/gratefulday @ a33f42c (src/lib/data/dailyAffirmations.ts; byte-identical at 8acb65f). Grateful Day\'s own writing. Selection (getAffirmationForDay): doy = day of year of the local date (1-366), raw = (doy - 1) * stride + year * yearStride, index = ((raw % n) + n) % n over items in array order.',
+    _about: 'Daily Affirmations exported from spe1020/gratefulday @ ' + commit + ' (src/lib/data/dailyAffirmations.ts). Grateful Day\'s own writing. Selection (getAffirmationForDay): doy = day of year of the local date (1-366), raw = (doy - 1) * stride + year * yearStride, index = ((raw % n) + n) % n over items in array order. itemsSha256 = SHA-256 of the items joined with "\\n" (UTF-8).',
     version: 1,
+    sourceCommit: commit,
     rotation: { stride: 53, yearStride: 23 },
+    itemsSha256: createHash('sha256').update(DAILY_AFFIRMATIONS.join('\n'), 'utf8').digest('hex'),
     items: DAILY_AFFIRMATIONS,
   }, null, 1) + '\n');
+} else if (mode === 'readers-guard') {
+  // Hashes only, never text: lets the iOS tests prove no web teaching (future
+  // Daily Readers) title, body or quote is in the app bundle. Normalise:
+  // lower-case, every run of non-letters/digits becomes one space, trim.
+  // Each field gives the hash of its whole normalised text, plus one hash per
+  // run of 8 consecutive words. Hash = first 16 hex of SHA-256.
+  const norm = (t: string) => t.toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const h = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex').slice(0, 16);
+  const whole = new Set<string>(); const grams = new Set<string>();
+  for (const t of TEACHINGS as { title: string; body: string; scriptureQuote?: string }[]) {
+    for (const f of [t.title, t.body, t.scriptureQuote ?? '']) {
+      const n = norm(f); if (!n) continue;
+      whole.add(h(n));
+      const w = n.split(' ');
+      for (let i = 0; i + 8 <= w.length; i++) grams.add(h(w.slice(i, i + 8).join(' ')));
+    }
+  }
+  writeFileSync(out, JSON.stringify({
+    _about: 'Hashes (no text) of every gratefulday teaching title, body and scriptureQuote @ ' + (process.env.GD_WEB_COMMIT ?? 'unset') + ' (src/lib/data/teachings.json, ' + TEACHINGS.length + ' items). See gen.ts readers-guard for the normalisation.',
+    gram: 8, whole: [...whole].sort(), grams: [...grams].sort(),
+  }) + '\n');
 } else if (mode === 'affirmation-samples') {
   // Calls the web's getAffirmationForDay exactly as TodayHero.tsx does.
   const rows: { date: string; index: number }[] = [];
@@ -125,5 +152,5 @@ if (mode === 'events') {
     rows.push({ date: formatDateString(d), index });
     d.setDate(d.getDate() + 1);
   }
-  writeFileSync(out, JSON.stringify({ _about: 'getAffirmationForDay(getDayOfYear(d), d.getFullYear()) at a33f42c for every local date 2026-01-01..2028-12-31, as an index into affirmations.json items. Generated in TZ=' + (process.env.TZ ?? 'unset') + '.', rows }) + '\n');
+  writeFileSync(out, JSON.stringify({ _about: 'getAffirmationForDay(getDayOfYear(d), d.getFullYear()) at ' + (process.env.GD_WEB_COMMIT ?? 'unset') + ' for every local date 2026-01-01..2028-12-31, as an index into affirmations.json items. Generated in TZ=' + (process.env.TZ ?? 'unset') + '.', rows }) + '\n');
 }
