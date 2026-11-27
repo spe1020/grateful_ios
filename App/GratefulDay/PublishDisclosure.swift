@@ -12,7 +12,7 @@ enum DisclosureCopy {
     }
     /// Prep §2.3: after the count line, or in its place when the count is 0.
     static let automatic = "After this, what you write is backed up to your account automatically."
-    static let encrypted = "Your words are encrypted, so they can only be read with your key."
+    static let encrypted = "Your private reflections are encrypted, so they can only be read with your key."
     static let visible = "The dates and times you save or edit entries can be seen by others."
     static let continueButton = "Continue"
     static let notNow = "Not now"
@@ -20,7 +20,7 @@ enum DisclosureCopy {
     /// §11 (flows doc): the Learn more page, final copy. Opened from the
     /// sheet and from Settings → Privacy; reading it changes nothing.
     static let learnMoreHeading = "What's private in your journal"
-    static let learnMoreIntro = "The words you write are encrypted. The dates and times you save or edit an entry can be seen by others."
+    static let learnMoreIntro = "The words of your private reflections are encrypted. The dates and times you save or edit an entry can be seen by others."
     struct Section: Hashable {
         let title: String
         let lines: [String]
