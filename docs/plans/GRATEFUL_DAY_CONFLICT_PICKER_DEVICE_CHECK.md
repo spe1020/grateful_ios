@@ -9,9 +9,9 @@ created: 2026-11-25
 
 **Why:** defect **D2**, confirmed on iOS `10ae4d6` in the Simulator: a tap on any option selected the last one. On the two deletion screens the last option is the destructive one. This check confirms the fix with a finger on all three screens, plus two other buttons the same fix changes: **Show all** and **Keep both for all**. It doesn't replace the automated tests or Audit's review.
 
-Build: the D2 fix, `fd67ebb` (draft PR #41, branch `fix/d2-conflict-picker`); record the commit. **Don't run this on `10ae4d6`.** If Chief names a newer #41 head, ask whether these steps still apply. `fd67ebb` is based on `10ae4d6` and doesn't include the D1 fix (#38). Screen text, layout and expected results were read from source at `fd67ebb`.
+Build: iOS main `f040127`, which includes the D2 fix (#41) and the D1 (#38) and D5 (#42) fixes; record the commit. **Don't run this on `10ae4d6`.** If Chief names a newer build, ask whether these steps still apply. Screen text and layout were read from source at `fd67ebb`; the conflict screen's source is unchanged from there to `f040127`. Expected results were re-checked against the sync changes in #38 and #42.
 
-It also doesn't include the fix for **D5** (after another device deletes a day, writing it again on iOS shows a false "deleted from your account" conflict). Delete from the web only in screen B's steps. If a deletion screen or line appears anywhere these steps don't expect it, record it as possible D5, tap **Not now** and stop.
+This check doesn't test the **D5** fix. Delete from the web only in screen B's steps. If a deletion screen or line appears anywhere these steps don't expect it, that's a finding on this build: record it, tap **Not now** and stop.
 
 ## Safety
 - **Throwaway identity only. Never your real account.**
@@ -23,7 +23,7 @@ It also doesn't include the fix for **D5** (after another device deletes a day, 
 - Made-up test lines only. Cover entry text in screenshots. Never screenshot or send the nsec.
 
 ## You need
-- That device (iOS 17+), a Mac with Xcode to install the build (signing team `Z26TJQZZWC`; don't select the primary iPhone as the Run destination). Run `git fetch origin`, then check out `fd67ebb` in a separate worktree, confirm `git rev-parse --short HEAD`, and open the app from its icon.
+- That device (iOS 17+), a Mac with Xcode to install the build (signing team `Z26TJQZZWC`; don't select the primary iPhone as the Run destination). Run `git fetch origin`, then check out `f040127` in a separate worktree, confirm `git rev-parse --short HEAD`, and open the app from its icon.
 - A **new** throwaway identity made outside the app, with its nsec in a password manager: the web needs it, and the app can't export a key yet. Note its npub.
 - A computer with a private browser window on gratefulday.space, signed in as that identity. It must stay online while the device is offline.
 - **Two calendar days.** Both apps only let you edit today, so Parts 1 and 2 must finish on one local date, and Part 4 needs a conflict from an earlier date plus one from a later date. Part 3 leaves the first one open; Part 4 runs on any later date. Allow about an hour on the first day, away from midnight, and 15 minutes on the later one. Don't change the device or computer clock. Keep the device and computer in the same time zone.
@@ -46,7 +46,7 @@ It also doesn't include the fix for **D5** (after another device deletes a day, 
 6. Tap the line "Your reflection from <date> was also changed elsewhere. Choose what to keep." or "This reflection was also changed elsewhere. Both versions are kept on this iPhone."
 7. Check that **Your account** shows "web N" and **This iPhone** shows "phone N". If they're swapped or wrong, that's a FAIL: screenshot, tap **Not now**, stop.
 
-No conflict after two reopens and 5 minutes online: record BLOCKED. A conflict before step 3 is a separate finding (see D1, decision log P102): record it, tap **Not now**, stop.
+No conflict after two reopens and 5 minutes online: record BLOCKED. A conflict before step 3 is a separate finding, and this build has the D1 fix (decision log P102): record it, tap **Not now**, stop.
 
 ### Hit-area probe (round 1, before tapping Done)
 Each option is its own row. The options are **Keep both** (preselected), **Keep this iPhone's** and **Keep your account's**. The line under them changes with the selection:
