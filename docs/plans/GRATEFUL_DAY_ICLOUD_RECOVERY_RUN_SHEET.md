@@ -6,14 +6,14 @@ created: 2026-11-25
 ---
 
 **Seth runs this. Agents don't.** Phase 1 exit criterion 2. Replaces step 3 of `GRATEFUL_DAY_PHASE1_RECOVERY_RUN_SHEET_2026_11_25.md`.
-Build: iOS main `f040127`. All quoted screen text was checked against source at `10ae4d6`. Between `10ae4d6` and `f040127`, no account, backup or restore source file changed; the app changes are in sync, the conflict screen and a Debug-only test fixture. **Not yet run.** If the app says something different, record it.
+Build: iOS `f040127` (`main` has moved on since; the build steps below check out this commit). All quoted screen text was checked against source at `10ae4d6`. Between `10ae4d6` and `f040127`, no account, backup or restore source file changed; the app changes are in sync, the conflict screen and a Debug-only test fixture. **Seth reported a restore PASS on 2026-11-27** (see the result record; details pending). If the app says something different, record it.
 
 ## Decide first: which device is Device 1
 Device 1 creates a new disposable identity. **Your primary iPhone can't be Device 1 or Device 2:** either role means switching its account.
 
 | Setup | What it proves | |
 |---|---|---|
-| **A. Two non-primary devices** (iPhone, or iPad running the iPhone app) | Explicit backup, sync, restore, decrypt: all of section 5 | **Recommended.** Needed for PASS on this sheet |
+| **A. Two non-primary devices** (iPhone, or iPad running the iPhone app) | Explicit backup, sync, restore, decrypt: all of section 5 | **Approved by Seth (F, 8a3b1c2b).** Needed for PASS on this sheet |
 | B. One non-primary device + the older throwaway backup from the first session | Restore of an old backup only. The act of backing up isn't re-tested, and it needs that backup's recorded npub and a saved reflection | Fallback. Needs your approval to count for exit criterion 2 |
 
 With only one spare device and no approval for B, record **BLOCKED: no second non-primary device**. A Simulator never counts.
@@ -22,7 +22,7 @@ With only one spare device and no approval for B, record **BLOCKED: no second no
 1. Device 1 and Device 2: physical, iOS 17 or later, charged, on a working network, **each with a passcode**.
 2. Both signed in to the **same Apple Account**.
 3. On both: Settings > your name > iCloud > Passwords (and Keychain) > iCloud Keychain sync **on**. Finish any Apple approval prompt. Menu names vary by iOS version.
-4. Neither device has a Grateful Day account or any written entry (guest entries would be adopted by the new identity). If one does, stop. Don't remove anything to make room.
+4. Neither device has a Grateful Day account or any written entry (guest entries would be adopted by the new identity). If one does, stop. Don't remove anything to make room. Deleting and reinstalling the app doesn't make a device clean. A key can stay in the Keychain, and the app then opens connected. Part 1 step 1 / Part 2 step 1 catch this: if an account shows, stop.
 5. A Mac with Xcode, a cable, Developer Mode on both devices, your signing team **Z26TJQZZWC** (the one in your local checkout), bundle ID `app.gratefulday.ios`.
 6. A private note for: the new npub, the date, times. **No nsec is needed; don't write one down.**
 7. A made-up test line you'll recognize. No real journal text.
@@ -82,9 +82,9 @@ With only one spare device and no approval for B, record **BLOCKED: no second no
 Date and times (backup, found), both device models and iOS versions, `f040127`, both shortened npubs, which rows Device 2 showed, R1 to R4, screenshots. **No nsec, no reflection text.**
 
 ## Never, during or after
-No **Remove account and local data**. No **Delete backup**. No deleting Keychain items or the app. No reset. Nothing on the primary iPhone. Leave the test accounts and the new backup in place; cleanup needs your explicit go. The new backup will also sync to your primary iPhone's iCloud Keychain. That's expected; do nothing with it.
+No **Remove account and local data**. No **Delete backup**. No deleting Keychain items or the app. No reset. Nothing on the primary iPhone. Leave the test accounts and the new backup in place; cleanup needs your explicit go. The new backup will also sync to your primary iPhone's iCloud Keychain if your primary iPhone uses the same Apple Account. That's expected; do nothing with it.
 
 ## Result record (physical devices only)
 | Date | Setup | Devices / iOS | Build | R1 | R2 (minutes) | R3 | R4 | Overall | Evidence |
 |---|---|---|---|---|---|---|---|---|---|
-| | | | `f040127` | | | | | **BLOCKED: awaiting devices** | |
+| 2026-11-27 (reported) | not stated | not stated | not stated | | | | | **PASS, user-verified** (Seth 3459b698; recorded per Chief 3e8db74a) | Seth's report only. R1–R4 not itemized; details and screenshots pending |
