@@ -110,4 +110,37 @@ final class TodayDayRefreshTests: XCTestCase {
         XCTAssertEqual(try repo.text(for: started), String(repeating: "x", count: 20))
         XCTAssertEqual(try repo.text(for: shown), "new day")
     }
+
+    /// B8 (Audit f91cb48e): the real notification → `TodayDayRefresh` →
+    /// `TodayEditorModel` path, with only the save stubbed. Each posted
+    /// notification (time zone, clock, midnight) drives the refresh the way
+    /// `TodayView` wires it; while saving fails nothing moves.
+    func testPostedNotificationsDriveTheRefreshAndAFailedSaveHolds() throws {
+        let center = NotificationCenter()
+        var locked = true
+        var zone = chicago
+        let started = JournalDay(containing: lateEvening, timeZone: chicago)
+        var shown = started
+        let editor = TodayEditorModel(repository: repo, day: started, save: { [repo] text, day in
+            if locked { throw Locked() }
+            try repo!.save(text: text, for: day)
+        })
+        let sub = TodayDayRefresh.publisher(center: center).sink { _ in
+            shown = TodayDayRefresh.refresh(current: shown, editor: editor, now: self.lateEvening, timeZone: zone)
+        }
+        defer { sub.cancel() }
+        editor.edit("typed before the flight landed")
+        zone = tokyo
+        for name in TodayDayRefresh.notifications {
+            center.post(name: name, object: nil)
+            XCTAssertEqual(shown, started, "\(name.rawValue): stays on the unsaved entry")
+            XCTAssertEqual(editor.day, started)
+            XCTAssertEqual(editor.text, "typed before the flight landed")
+        }
+        locked = false
+        center.post(name: .NSSystemTimeZoneDidChange, object: nil)
+        XCTAssertEqual(shown.dateString, "2026-11-22")
+        XCTAssertEqual(shown, editor.day, "card and editor on the same day")
+        XCTAssertEqual(try repo.text(for: started), "typed before the flight landed")
+    }
 }
