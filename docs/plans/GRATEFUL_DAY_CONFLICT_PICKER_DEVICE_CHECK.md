@@ -9,7 +9,7 @@ created: 2026-11-25
 
 **Why:** defect **D2**, confirmed on iOS `10ae4d6` in the Simulator: a tap on any option selected the last one. On the two deletion screens the last option is the destructive one. This check confirms the fix with a finger on all three screens, plus two other buttons the same fix changes: **Show all** and **Keep both for all**. It doesn't replace the automated tests or Audit's review.
 
-Build: iOS main `f040127`, which includes the D2 fix (#41) and the D1 (#38) and D5 (#42) fixes; record the commit. **Don't run this on `10ae4d6`.** If Chief names a newer build, ask whether these steps still apply. Screen text and layout were read from source at `fd67ebb`; the conflict screen's source is unchanged from there to `f040127`. Expected results were re-checked against the sync changes in #38 and #42.
+Build: iOS `a254289`, which includes the D2 fix (#41) and the D1 (#38) and D5 (#42) fixes; record the commit. **Don't run this on `10ae4d6`.** If Chief names a newer build, ask whether these steps still apply. Screen text and layout were read from source at `fd67ebb`; the conflict screen's source is unchanged from there to `f040127`. Expected results were re-checked against the sync changes in #38 and #42. Between `f040127` and `a254289`, the conflict and Set aside screen files didn't change. #45 changed how sync connects to relays (one connection per relay per pass); the expected results weren't re-derived for it, so record any difference.
 
 This check doesn't test the **D5** fix. Delete from the web only in screen B's steps. If a deletion screen or line appears anywhere these steps don't expect it, that's a finding on this build: record it, tap **Not now** and stop.
 
@@ -23,8 +23,8 @@ This check doesn't test the **D5** fix. Delete from the web only in screen B's s
 - Made-up test lines only. Cover entry text in screenshots. Never screenshot or send the nsec.
 
 ## You need
-- That device (iOS 17+), a Mac with Xcode to install the build (signing team `Z26TJQZZWC`; don't select the primary iPhone as the Run destination). Run `git fetch origin`, then check out `f040127` in a separate worktree, confirm `git rev-parse --short HEAD`, and open the app from its icon.
-- A **new** throwaway identity made outside the app, with its nsec in a password manager: the web needs it, and the app can't export a key yet. Note its npub.
+- That device (iOS 17+), a Mac with Xcode to install the build (signing team `Z26TJQZZWC`; don't select the primary iPhone as the Run destination). Run `git fetch origin`, then check out `a254289` in a separate worktree, confirm `git rev-parse --short HEAD`, and open the app from its icon.
+- A **new** throwaway identity made outside the app, with its nsec in a password manager: the web needs it. Don't use the app's key export for this check. Note its npub.
 - A computer with a private browser window on gratefulday.space, signed in as that identity. It must stay online while the device is offline.
 - **Two calendar days.** Both apps only let you edit today, so Parts 1 and 2 must finish on one local date, and Part 4 needs a conflict from an earlier date plus one from a later date. Part 3 leaves the first one open; Part 4 runs on any later date. Allow about an hour on the first day, away from midnight, and 15 minutes on the later one. Don't change the device or computer clock. Keep the device and computer in the same time zone.
 - To finish round 5's relay check: someone to query the relays by the throwaway's public npub (an agent can do this).

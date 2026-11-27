@@ -20,7 +20,7 @@ Approved by Seth (L, 8a3b1c2b). **No result from this check shows the key is saf
 - **Don't save, export, copy or send Console lines, and don't take a sysdiagnose.** Record only what the table asks for.
 - Paste the key nowhere except the app's import field.
 
-Build: `f040127`; record the commit. A `git grep` of the app and package sources at `f040127` for accessibility announcement calls finds none.
+Build: `a254289`; record the commit. A `git grep` of `App/GratefulDay` and `Sources` at `a254289` finds one accessibility announcement call, in key export (`Account/KeyExport.swift`, added by #40): it announces the "Copied" notice after **Copy journal key**, not the key. This check doesn't use key export. The import screen and its Paste button code didn't change between `f040127` and `a254289`.
 
 ## Setup
 1. Install the build. Open it from its icon, not from Xcode's debugger.
