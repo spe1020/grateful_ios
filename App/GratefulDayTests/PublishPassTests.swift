@@ -51,9 +51,9 @@ final class PublishPassTests: XCTestCase {
         return row
     }
 
-    private func row(_ date: String, owner o: String? = nil) throws -> JournalEntry {
+    private func row(_ date: String, owner o: String? = nil, in ctx: ModelContext? = nil) throws -> JournalEntry {
         let key: String? = JournalEntry.key(owner: o ?? owner, dateString: date)
-        return try XCTUnwrap(context.fetch(FetchDescriptor<JournalEntry>(predicate: #Predicate { $0.entryKey == key })).first)
+        return try XCTUnwrap((ctx ?? context).fetch(FetchDescriptor<JournalEntry>(predicate: #Predicate { $0.entryKey == key })).first)
     }
 
     private func edit(_ date: String, _ text: String, at: Date) throws {
@@ -74,14 +74,20 @@ final class PublishPassTests: XCTestCase {
         try context.save()
     }
 
+    /// `gate` holds matching frames (and keeps reads from timing out while
+    /// they're held); `ctx` is another context on the same store, as after
+    /// a relaunch.
     private func pass(_ relays: [FakeRelay], read: [FakeRelay] = [], write: [URL]?, key: Data? = nil,
-                      at: Date? = nil, isCurrent: @escaping @MainActor () -> Bool = { true }) -> PublishPass {
-        let transport = FakeTransport(relays: Dictionary(uniqueKeysWithValues: (relays + read).map { ($0.url, $0) }))
-        var fetcher = RelayFetcher(transport: transport); fetcher.pageTimeout = .milliseconds(300)
+                      at: Date? = nil, isCurrent: @escaping @MainActor () -> Bool = { true },
+                      gate: RelayGate? = nil, in ctx: ModelContext? = nil) -> PublishPass {
+        let base = FakeTransport(relays: Dictionary(uniqueKeysWithValues: (relays + read).map { ($0.url, $0) }))
+        let transport: RelayTransport = gate.map { GatedTransport(base: base, gate: $0) } ?? base
+        var fetcher = RelayFetcher(transport: transport)
+        fetcher.pageTimeout = gate == nil ? .milliseconds(300) : .seconds(20)
         var publisher = RelayPublisher(transport: transport); publisher.timeout = .milliseconds(300)
         let k = key ?? secret
         let now = at ?? t0
-        return PublishPass(context: context, owner: KeyVault.pubkeyHex(for: k)!, secret: k,
+        return PublishPass(context: ctx ?? context, owner: KeyVault.pubkeyHex(for: k)!, secret: k,
                            set: RelaySet(read: (relays + read).map(\.url), write: write),
                            fetcher: fetcher, publisher: publisher, isCurrent: isCurrent, now: { now })
     }
@@ -98,12 +104,12 @@ final class PublishPassTests: XCTestCase {
         }
     }
 
-    private func outbox(_ key: Data? = nil) -> Outbox {
-        Outbox(context: context, owner: KeyVault.pubkeyHex(for: key ?? secret)!)
+    private func outbox(_ key: Data? = nil, in ctx: ModelContext? = nil) -> Outbox {
+        Outbox(context: ctx ?? context, owner: KeyVault.pubkeyHex(for: key ?? secret)!)
     }
 
-    private func earlier(_ date: String) throws -> [EarlierVersion] {
-        try context.fetch(FetchDescriptor<EarlierVersion>()).filter { $0.dateString == date }
+    private func earlier(_ date: String, in ctx: ModelContext? = nil) throws -> [EarlierVersion] {
+        try (ctx ?? context).fetch(FetchDescriptor<EarlierVersion>()).filter { $0.dateString == date }
     }
 
     // MARK: - Publishing and acknowledgements
@@ -899,5 +905,207 @@ final class PublishPassTests: XCTestCase {
         XCTAssertEqual(try review.load().items.map(\.accountText), [""], "the deleted account text is never offered")
         try review.apply(["2026-11-20": .keepAccount])
         XCTAssertEqual(try row("2026-11-20").syncState, .conflict, "never marked saved with deleted text")
+    }
+
+    // MARK: - D1/P102: a pass ended between record and markSynced
+
+    /// Holds the re-check after a send: the first day refetch (36669, `#d`)
+    /// once an EVENT frame has gone out. The pre-send refetch passes.
+    private func postSendRecheckGate() -> RelayGate {
+        final class Flag: @unchecked Sendable {
+            private let lock = NSLock(); private var on = false
+            func set() { lock.withLock { on = true } }
+            var value: Bool { lock.withLock { on } }
+        }
+        let sentEvent = Flag()
+        return RelayGate { array in
+            if array.first as? String == "EVENT" { sentEvent.set(); return false }
+            guard sentEvent.value, array.first as? String == "REQ", array.count >= 3,
+                  let f = array[2] as? [String: Any] else { return false }
+            return (f["kinds"] as? [Int]) == [DailyEntry.kind] && f["#d"] != nil
+        }
+    }
+
+    private func waitUntil(_ what: String, _ condition: () -> Bool) async throws {
+        let started = Date()
+        while !condition() {
+            if Date().timeIntervalSince(started) > 10 { return XCTFail("timed out waiting for \(what)") }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    private func service(_ relays: [FakeRelay], gate: RelayGate?) -> SyncService {
+        let base = FakeTransport(relays: Dictionary(uniqueKeysWithValues: relays.map { ($0.url, $0) }))
+        let transport: RelayTransport = gate.map { GatedTransport(base: base, gate: $0) } ?? base
+        var fetcher = RelayFetcher(transport: transport)
+        fetcher.pageTimeout = gate == nil ? .milliseconds(300) : .seconds(20)
+        var publisher = RelayPublisher(transport: transport); publisher.timeout = .milliseconds(300)
+        return SyncService(fetcher: fetcher, publisher: publisher)
+    }
+
+    /// D1/P102: iOS sends an edit, two write relays acknowledge it, and the
+    /// app is killed during the re-check after the send, before markSynced.
+    /// On relaunch the next pass runs that re-check and marks the day
+    /// synced; a web edit made after that recovery, based on iOS's event,
+    /// then replaces it (archived first) as for any synced day, not as a
+    /// conflict. (In the live repro, a4ecea5b then 08cfdfca, the web edit
+    /// landed before the relaunch; that order is still a conflict by design,
+    /// see `owedRecheck`.) At 10ae4d6 nothing ever marks it
+    /// synced: the day keeps its old base and the web edit is a conflict.
+    func testPassKilledBeforeMarkSyncedIsMarkedSyncedNextPassAndLaterRemoteEditImports() async throws {
+        executionTimeAllowance = 60
+        let base = try remote("2026-11-20", "start", at: 100)
+        try entry("2026-11-20", "start", base: base)
+        try JournalRepository(context: context, activeOwner: owner).setFlag(PublishDisclosure.flagName(owner: owner))
+        try edit("2026-11-20", "from iPhone", at: .now)
+        let relays = RelaySet.defaultRead.map { FakeRelay($0.host!, events: [base]) }
+        let write = RelaySet.defaultWrite
+
+        // The pass that's killed: held in its re-check after the send.
+        let gate = postSendRecheckGate()
+        let killed = service(relays, gate: gate)
+        killed.start(owner: owner, secret: secret, context: context, isCurrent: { true })
+        try await waitUntil("the re-check after the send") { gate.heldCount > 0 }
+        let sentRow = try XCTUnwrap(outbox().liveRow(dateString: "2026-11-20"))
+        XCTAssertEqual(DeliveryRules.state(acked: sentRow.ackedRelays, write: write), .synced, "acks recorded")
+        XCTAssertEqual(try row("2026-11-20").syncState, .localOnly, "killed before markSynced")
+        XCTAssertEqual(try row("2026-11-20").remoteEventID, base.id)
+        let sentId = sentRow.eventId
+
+        // Relaunch: a new context on the same store and a new service. The
+        // read runs first, then the publish pass.
+        let relaunched = ModelContext(container)
+        relays.forEach(keepNewest)
+        let sync = service(relays, gate: nil)
+        await sync.run(owner: owner, secret: secret, context: relaunched)
+        XCTAssertEqual(sync.lastPublish?.synced, 1, "the owed re-check ran, then markSynced")
+        XCTAssertEqual(sync.lastPublish?.sent, 0, "not sent again")
+        XCTAssertEqual(sync.lastPublish?.conflicts, 0)
+        var r = try row("2026-11-20", in: relaunched)
+        XCTAssertEqual(r.syncState, .synced)
+        XCTAssertEqual(r.remoteEventID, sentId, "now based on the event it sent")
+        XCTAssertEqual(r.notesText, "from iPhone")
+
+        // The web then edits the day, based on iOS's event.
+        let fromWeb = try remote("2026-11-20", "from web", at: sentRow.eventCreatedAt + 30)
+        for relay in relays { relay.events.append(fromWeb); keepNewest(relay) }
+        await sync.run(owner: owner, secret: secret, context: relaunched)
+        guard case .done(let imported) = sync.status else { return XCTFail("the read didn't finish: \(sync.status)") }
+        XCTAssertEqual(imported.replaced, 1)
+        XCTAssertEqual(imported.conflicts, 0, "not a false conflict")
+        XCTAssertEqual(sync.lastPublish?.conflicts, 0)
+        r = try row("2026-11-20", in: relaunched)
+        XCTAssertEqual(r.syncState, .synced)
+        XCTAssertEqual(r.notesText, "from web")
+        XCTAssertEqual(r.remoteEventID, fromWeb.id)
+        let archived = try earlier("2026-11-20", in: relaunched)
+        XCTAssertEqual(archived.map(\.notesText), ["from iPhone"], "archived before it was replaced")
+        XCTAssertEqual(archived.map(\.reason), [.replacedByRemote])
+
+        // The killed pass never resumes; let its task end.
+        killed.stop()
+        gate.open()
+        try await waitUntil("the killed pass to end") { killed.status != .reading }
+    }
+
+    /// D1/P102 keeps the safeguard: the owed re-check is the full post-send
+    /// one (read ∪ write, any timestamp). A version this row didn't base on,
+    /// found then (here only on a read-only relay, so not on the row's
+    /// re-check list), stops the row and makes the day a conflict with both
+    /// texts kept; it's never marked synced. This is also the documented
+    /// residual: a remote edit that lands before the recovery re-check is a
+    /// conflict, even one based on this event.
+    func testOwedRecheckThatFindsAnUnbasedVersionStillStopsTheRow() async throws {
+        executionTimeAllowance = 60
+        let base = try remote("2026-11-20", "start", at: 100)
+        try entry("2026-11-20", "start", base: base)
+        try edit("2026-11-20", "from iPhone", at: t0)
+        let w = relays("a", "b", events: [base])
+        let readOnly = FakeRelay("readonly", events: [base])
+        let gate = postSendRecheckGate()
+        let killed = Task { try await pass(w, read: [readOnly], write: w.map(\.url), gate: gate).run() }
+        try await waitUntil("the re-check after the send") { gate.heldCount > 0 }
+        let sentRow = try XCTUnwrap(outbox().liveRow(dateString: "2026-11-20"))
+        XCTAssertEqual(sentRow.recheckRelays, [], "both write relays answered before the send")
+        XCTAssertEqual(try row("2026-11-20").syncState, .localOnly)
+
+        let fromWeb = try remote("2026-11-20", "from web", at: sentRow.eventCreatedAt + 30)
+        readOnly.events.append(fromWeb)
+        let relaunched = ModelContext(container)
+        let s = try await pass(w, read: [readOnly], write: w.map(\.url), at: t0.addingTimeInterval(60),
+                               in: relaunched).run()
+        XCTAssertEqual(s?.conflicts, 1)
+        XCTAssertEqual(s?.synced, 0)
+        let r = try row("2026-11-20", in: relaunched)
+        XCTAssertEqual(r.syncState, .conflict)
+        XCTAssertEqual(r.notesText, "from iPhone", "local text kept")
+        XCTAssertEqual(r.remoteEventID, base.id, "never based on its own event")
+        XCTAssertEqual(try earlier("2026-11-20", in: relaunched).map(\.notesText), ["from web"], "remote text kept")
+        XCTAssertTrue(try XCTUnwrap(outbox(in: relaunched).rows(dateString: "2026-11-20").first).supersededByRemote)
+
+        killed.cancel()
+        gate.open()
+        _ = try? await killed.value
+    }
+
+    /// D1/P102, backgrounded: a pass cancelled during the re-check after a
+    /// send never marks the day synced on a re-check that didn't run. At
+    /// 10ae4d6 it did, even with another version on the relays then; here
+    /// the next pass runs the re-check, finds it and stops the row.
+    func testCancelledDuringRecheckIsNotMarkedSyncedAndNextPassRunsTheRecheck() async throws {
+        executionTimeAllowance = 60
+        let base = try remote("2026-11-20", "start", at: 100)
+        try entry("2026-11-20", "start", base: base)
+        try edit("2026-11-20", "from iPhone", at: t0)
+        let w = relays("a", "b", events: [base])
+        let gate = postSendRecheckGate()
+        let backgrounded = Task { try await pass(w, write: w.map(\.url), gate: gate).run() }
+        try await waitUntil("the re-check after the send") { gate.heldCount > 0 }
+        let sentRow = try XCTUnwrap(outbox().liveRow(dateString: "2026-11-20"))
+        let fromWeb = try remote("2026-11-20", "from web", at: sentRow.eventCreatedAt + 30)
+        for relay in w { relay.events.append(fromWeb) }
+        backgrounded.cancel()
+        gate.open()
+        let stopped = try await backgrounded.value
+        XCTAssertEqual(stopped?.synced, 0)
+        var r = try row("2026-11-20")
+        XCTAssertEqual(r.syncState, .localOnly, "the re-check didn't run, so nothing is marked")
+        XCTAssertEqual(r.remoteEventID, base.id)
+
+        let s = try await pass(w, write: w.map(\.url), at: t0.addingTimeInterval(60)).run()
+        XCTAssertEqual(s?.conflicts, 1)
+        XCTAssertEqual(s?.synced, 0)
+        r = try row("2026-11-20")
+        XCTAssertEqual(r.syncState, .conflict)
+        XCTAssertEqual(r.notesText, "from iPhone")
+        XCTAssertEqual(try earlier("2026-11-20").map(\.notesText), ["from web"])
+    }
+
+    /// D1/P102, no remote change: the next pass after a cancelled re-check
+    /// marks the day synced without sending again, and a pass after that
+    /// owes nothing (no extra reads).
+    func testOwedRecheckRunsOnceThenTheRowIsDone() async throws {
+        executionTimeAllowance = 60
+        try entry("2026-11-20", "first light")
+        let w = relays("a", "b")
+        let gate = postSendRecheckGate()
+        let backgrounded = Task { try await pass(w, write: w.map(\.url), gate: gate).run() }
+        try await waitUntil("the re-check after the send") { gate.heldCount > 0 }
+        backgrounded.cancel()
+        gate.open()
+        _ = try await backgrounded.value
+        XCTAssertEqual(try row("2026-11-20").syncState, .localOnly)
+
+        let s = try await pass(w, write: w.map(\.url), at: t0.addingTimeInterval(60)).run()
+        XCTAssertEqual(s?.synced, 1)
+        XCTAssertEqual(s?.sent, 0)
+        XCTAssertTrue(w.allSatisfy { $0.publishedFrames.count == 1 }, "sent once, never again")
+        XCTAssertEqual(try row("2026-11-20").syncState, .synced)
+        XCTAssertEqual(try row("2026-11-20").remoteEventID, sent(w[0]).first?.id)
+
+        let requests = w.map(\.requests.count)
+        let after = try await pass(w, write: w.map(\.url), at: t0.addingTimeInterval(120)).run()
+        XCTAssertEqual(after?.synced, 0)
+        XCTAssertEqual(w.map(\.requests.count), requests, "nothing owed: no re-check")
     }
 }
