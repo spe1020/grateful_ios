@@ -6,7 +6,7 @@ created: 2026-11-25
 ---
 
 **Seth runs this. Agents don't.** Phase 1 exit criterion 2. Replaces step 3 of `GRATEFUL_DAY_PHASE1_RECOVERY_RUN_SHEET_2026_11_25.md`.
-Build: iOS `f040127` (`main` has moved on since; the build steps below check out this commit). All quoted screen text was checked against source at `10ae4d6`. Between `10ae4d6` and `f040127`, no account, backup or restore source file changed; the app changes are in sync, the conflict screen and a Debug-only test fixture. **Seth reported a restore PASS on 2026-11-27** (see the result record; details pending). If the app says something different, record it.
+Build: iOS `a254289`. All quoted screen text was checked against source at `10ae4d6`; none of the strings checked is missing at `a254289`. Between `10ae4d6` and `a254289`, `KeyVault.swift` and `Keychain.swift` didn't change. The Account screen gained **Advanced > Use your journal key in another app** (key export): **don't open it in this run.** **Seth reported a restore PASS on 2026-11-27**, before `a254289` was merged (see the result record; details pending). That row's build is whatever Seth reports; this line doesn't set it. If the app says something different, record it.
 
 ## Decide first: which device is Device 1
 Device 1 creates a new disposable identity. **Your primary iPhone can't be Device 1 or Device 2:** either role means switching its account.
@@ -30,8 +30,8 @@ With only one spare device and no approval for B, record **BLOCKED: no second no
 
 ## Build (both devices)
 1. `git -C <your grateful_ios checkout> fetch origin`
-2. `git -C <your grateful_ios checkout> worktree add ../grateful_ios-recovery f040127` (a separate folder, so your working checkout and its local changes aren't touched)
-3. In it, `git rev-parse --short HEAD` must print `f040127`.
+2. `git -C <your grateful_ios checkout> worktree add ../grateful_ios-recovery a254289` (a separate folder, so your working checkout and its local changes aren't touched)
+3. In it, `git rev-parse --short HEAD` must print `a254289`.
 4. Open `App/GratefulDay.xcodeproj`, scheme **GratefulDay**, pick your team (don't commit that), Run on each device. **Check the Run destination every time. Never select the primary iPhone.**
 
 ## Part 1: Device 1 (create, back up, write)
@@ -79,7 +79,7 @@ With only one spare device and no approval for B, record **BLOCKED: no second no
 - Phase 1 criterion 2 closes only on PASS.
 
 ## Send back
-Date and times (backup, found), both device models and iOS versions, `f040127`, both shortened npubs, which rows Device 2 showed, R1 to R4, screenshots. **No nsec, no reflection text.**
+Date and times (backup, found), both device models and iOS versions, `a254289`, both shortened npubs, which rows Device 2 showed, R1 to R4, screenshots. **No nsec, no reflection text.**
 
 ## Never, during or after
 No **Remove account and local data**. No **Delete backup**. No deleting Keychain items or the app. No reset. Nothing on the primary iPhone. Leave the test accounts and the new backup in place; cleanup needs your explicit go. The new backup will also sync to your primary iPhone's iCloud Keychain if your primary iPhone uses the same Apple Account. That's expected; do nothing with it.

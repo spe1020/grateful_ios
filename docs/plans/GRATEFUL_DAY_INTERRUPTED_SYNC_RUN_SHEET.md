@@ -5,19 +5,21 @@ status: active
 created: 2026-11-25
 ---
 
+> **Don't run this now. It's in no run plan.** It's written for the iPhone that holds test identity C, which per Chief (2026-11-27) is Seth's primary iPhone, and the primary iPhone isn't used for testing. A version for a spare device would need new setup steps.
+
 **Seth runs this on a physical iPhone. No Simulator result may be recorded for it.** Not yet run. Not one of the four Phase 1 exit criteria (handoff §1); it's the device test reserved in §4.
-Expected behavior was read from source at `f040127`: leaving for the background stops the running sync and closes relay connections; returning starts a new one. A send that got no answer is retried after 30 s, then 2 min, 10 min, then 1 h. If you leave after enough relays accepted a send but before the check that follows it finished, a later sync repeats that check and then marks the day saved (the #38 fix).
+Expected behavior was read from source at `a254289`: leaving for the background stops the running sync and closes all its relay connections; returning starts a new one. A sync pass now uses one connection per relay for its reads and sends (#45). If a connection that had opened drops, that relay is dialed again at most once in the pass; if it never opened, or drops a second time, the pass doesn't dial it again. A send that got no answer is retried after 30 s, then 2 min, 10 min, then 1 h. If you leave after enough relays accepted a send but before the check that follows it finished, a later sync repeats that check and then marks the day saved (the #38 fix).
 
 ## Before you start
 - The iPhone stays on its current account (test identity C). **No sign-out, no account switch, no Remove, no reinstall, don't delete the app.**
-- **Build: `f040127` only.** Your phone's last recorded build is `25d7f06`, which has none of the later fixes. Installing changes the app on your phone, so it's your choice; **if you don't update, don't run this sheet.**
-  - `git -C <your grateful_ios checkout> fetch origin`, then `git -C <your grateful_ios checkout> worktree add ../grateful_ios-interrupt f040127` (a separate folder, so your working checkout isn't touched). In it, `git rev-parse --short HEAD` must print `f040127`.
+- **Build: `a254289` only.** Your phone's last recorded build is `25d7f06`, which has none of the later fixes. Installing changes the app on your phone, so it's your choice; **if you don't update, don't run this sheet.**
+  - `git -C <your grateful_ios checkout> fetch origin`, then `git -C <your grateful_ios checkout> worktree add ../grateful_ios-interrupt a254289` (a separate folder, so your working checkout isn't touched). In it, `git rev-parse --short HEAD` must print `a254289`.
   - Run it **over** the installed app from Xcode (same team Z26TJQZZWC, same bundle ID; don't commit the team). **Never delete the app first.** If Xcode can't install over it, stop and report; don't remove anything.
   - Days written before the #29 fix with no owner are still not migrated, so keep the no-account-switch rule.
   - After installing, stop running from Xcode, open the app from its icon online, don't type, and wait up to 5 minutes for any Saving mark to clear. A conflict line or screen, or a mark still showing, **before I1** isn't an interruption result: screenshot (text covered), choose **Not now** if a screen is open, stop and report it.
 - This test writes today's reflection and publishes it (encrypted) as C. **If today already holds text you care about, run it another day.** Use made-up test lines only.
 - Have: the Mac with **Console.app** and a cable; a private browser window on gratefulday.space signed in as C.
-- Console.app: select the iPhone, filter `subsystem:app.gratefulday.ios`, start streaming. **Don't run from Xcode's debugger** (use the app's icon): a debugger can keep the app from being suspended. Relay names show as `<private>`; the stage lines are what matter. Don't share unfiltered device logs.
+- Console.app: select the iPhone, filter `subsystem:app.gratefulday.ios`, start streaming. **Don't run from Xcode's debugger** (use the app's icon): a debugger can keep the app from being suspended. The text after a line's stage name (relay names, counts, reasons, event ID prefixes) shows as `<private>`; the stage names are what matter, so match lines by their order. Don't share unfiltered device logs.
 
 ## Runs
 Do each once, with a new edit each time (a new edit starts a fresh retry schedule). Wait for the Saving mark to clear before the next run. Note the clock time of each action.
@@ -32,6 +34,8 @@ Do each once, with a new edit each time (a new edit starts a fresh retry schedul
 After each reopen, keep the app open and don't type for up to **5 minutes**.
 
 **Was it really interrupted?** For I1 to I3 look for `publish pass stopped`, `pass stopped`, a `not sent` line, a `not saved to the account yet` line, or a `sending` line with no `saved to the account` before you left. After reopening, `re-checking after an interrupted send` shows the #38 path ran; record whether it appeared. It also counts as evidence of interruption. It needn't appear: it depends on where the send was when you left. If sync had already finished (`saved to the account` before you left), that attempt didn't test interruption: repeat it once with a new edit. With no log evidence, record **INCONCLUSIVE**, even if everything looks right.
+
+`sockets this pass` is logged after any pass that dialed a relay, whether or not it was stopped. **It isn't evidence of interruption.** With #45 a pass may finish sooner than before (not measured for a single reflection). If the repeat also finishes before you leave, record **INCONCLUSIVE**.
 
 ## PASS / FAIL (each run)
 | Check | PASS | FAIL |
