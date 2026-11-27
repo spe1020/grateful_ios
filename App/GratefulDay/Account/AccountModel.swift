@@ -177,6 +177,10 @@ final class AccountModel {
 
     // MARK: Backup
 
+    /// Read-only access to the primary key item, for Show journal key. The
+    /// model never holds the exported key itself (S2+).
+    var primaryKeyReader: PrimaryKeyReading { vault }
+
     var backups: KeyVault.BackupList { vault.listBackups() }
     var skippedBackups: Int { vault.skippedBackups }
 

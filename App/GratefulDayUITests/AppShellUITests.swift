@@ -414,6 +414,47 @@ final class AppShellUITests: XCTestCase {
     /// Done on the keyboard, then wait until the keyboard has gone: a tab tap
     /// made while it is still animating away can be dropped (#23 CI run
     /// 45205166133, Chief P54). A wait for a known state, not a retry.
+    /// Key export §1.3/§1.7: the Advanced row appears once connected, opens
+    /// Screen 1 with Prep's copy, and Cancel goes back. Nothing here
+    /// authenticates, so no key is read. Signs out after.
+    func testExportRowOpensScreen1AndCancelGoesBack() {
+        let app = Self.app()
+        app.launch()
+        XCTAssertTrue(app.textViews["today.editor"].waitForExistence(timeout: 10))
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(app.buttons["settings.account"].waitForExistence(timeout: 10))
+        app.buttons["settings.account"].tap()
+        if app.buttons["account.signOut"].waitForExistence(timeout: 3) {
+            app.buttons["account.signOut"].tap()
+            app.buttons["signOut.confirm"].tap()
+        }
+        XCTAssertTrue(app.buttons["account.create"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["account.export"].exists, "not offered while signed out")
+        app.buttons["account.create"].tap()
+        app.buttons["Make a new key"].tap()
+        XCTAssertTrue(app.buttons["backup.no"].waitForExistence(timeout: 5))
+        app.buttons["backup.no"].tap()
+        app.buttons["Continue without backup"].tap()
+
+        let row = app.buttons["account.export"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "offered once connected")
+        row.tap()
+        XCTAssertTrue(app.staticTexts["Your journal key is your account"].waitForExistence(timeout: 5))
+        // Seth P165: the Save Password bullet is on Screen 1 (literal, so
+        // removing it from the copy fails here too).
+        let savePassword = app.staticTexts["If your browser offers to save your private key as a password, choose Not Now."]
+        if !savePassword.exists { app.swipeUp() }
+        XCTAssertTrue(savePassword.waitForExistence(timeout: 5), "Save Password bullet shown")
+        XCTAssertTrue(app.buttons["export.show"].exists)
+        XCTAssertFalse(app.staticTexts["export.key"].exists, "no key on Screen 1")
+        app.buttons["export.cancel"].tap()
+        XCTAssertTrue(app.buttons["account.signOut"].waitForExistence(timeout: 5), "back on Account")
+
+        app.buttons["account.signOut"].tap()
+        app.buttons["signOut.confirm"].tap()
+        XCTAssertTrue(app.buttons["account.usedBefore"].waitForExistence(timeout: 5), "signed out")
+    }
+
     static func dismissKeyboard(_ app: XCUIApplication) {
         app.buttons["today.keyboardDone"].tap()
         let gone = NSPredicate(format: "count == 0")

@@ -74,13 +74,17 @@ struct RelayFetcher: Sendable {
         var largestPage = 0
         /// The last page held only known ids, and we stepped back a second.
         var steppedBack = false
+        // Subscription ids are unique per query: with one socket per relay
+        // per pass (`SharedConnections`), the journal and settings reads run
+        // on the same socket at once, and each must see only its own EOSE.
+        let tag = String(UUID().uuidString.prefix(8)).lowercased()
         while true {
             if Task.isCancelled { return (url, Array(seen.values), .failed("cancelled")) }
             page += 1
             var f = filter
             f.until = until
             f.limit = pageLimit
-            let (events, outcome) = await fetchPage(f, on: connection, subscription: "gd\(page)")
+            let (events, outcome) = await fetchPage(f, on: connection, subscription: "gd-\(tag)-\(page)")
             guard outcome == .answered else {
                 for e in events { seen[e.id] = e }
                 return (url, Array(seen.values), outcome)

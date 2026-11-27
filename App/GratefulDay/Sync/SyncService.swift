@@ -251,6 +251,23 @@ final class SyncService {
     func run(owner: String, secret: Data, context: ModelContext,
              isCurrent: @escaping @MainActor () -> Bool = { true }) async {
         guard status != .reading else { return }
+        // Seth M (option 2): one socket per relay for the whole pass, shared
+        // by its reads and sends. They are all closed when the pass ends, and
+        // at once when it's cancelled (background, sign-out, another
+        // account), so no socket is reused by a later pass or account.
+        let shared = SharedConnections(base: baseFetcher.transport)
+        await withTaskCancellationHandler {
+            await pass(owner: owner, secret: secret, context: context, isCurrent: isCurrent, shared: shared)
+        } onCancel: {
+            shared.closeAll()
+        }
+        shared.closeAll()
+        let stats = shared.statistics
+        if !stats.isEmpty { SyncLog.note("sockets this pass", SyncLog.describe(stats)) }
+    }
+
+    private func pass(owner: String, secret: Data, context: ModelContext,
+                      isCurrent: @escaping @MainActor () -> Bool, shared: SharedConnections) async {
         status = .reading
         // A pass that stops before publishing schedules no retry.
         nextRetryAt = nil
@@ -261,8 +278,8 @@ final class SyncService {
         let remembered = rememberedUnreachable()
         if !remembered.isEmpty { SyncLog.note("not dialed, remembered as not opening", SyncLog.hosts(remembered.sorted { $0.absoluteString < $1.absoluteString })) }
         let unreachable = PassTransport.Unreachable(remembered)
-        fetcher.transport = PassTransport(base: baseFetcher.transport, unreachable: unreachable)
-        publisher.transport = PassTransport(base: basePublisher.transport, unreachable: unreachable)
+        fetcher.transport = PassTransport(base: shared, unreachable: unreachable)
+        publisher.transport = PassTransport(base: shared, unreachable: unreachable)
         let bootstrap = RelaySet.defaultRead
         let listResult = await fetcher.fetch(RelayFilter(authors: [owner], kinds: [10002]), from: bootstrap)
         SyncLog.note("relay list read", SyncLog.describe(listResult.outcomes))

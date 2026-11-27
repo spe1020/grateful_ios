@@ -28,6 +28,8 @@ struct AccountView: View {
     @State private var notice: String?
     /// The flow [Try again] reopens, for notices that offer it.
     @State private var retry: Sheet?
+    /// Show journal key (Advanced): Screen 1 is pushed while this is set.
+    @State private var exporting = false
 
     private var longSaving: Int? {
         guard let context = store.container?.mainContext, let owner = account.activeOwner else { return nil }
@@ -81,6 +83,16 @@ struct AccountView: View {
                             .accessibilityIdentifier("account.tryNow")
                     }
                 }
+                // Show journal key: below the account, backup and sign-out
+                // rows and their status lines, above Remove (Prep, §1.3).
+                if KeyExport.isOffered(for: account.state) {
+                    Section {
+                        Button(AccountCopy.exportRow) { exporting = true }
+                            .accessibilityIdentifier("account.export")
+                    } header: {
+                        Text(AccountCopy.exportSection)
+                    }
+                }
             case .keyMissing:
                 Section {
                     Text(AccountCopy.keyMissing)
@@ -120,6 +132,13 @@ struct AccountView: View {
         }
         .navigationTitle("Account")
         .onAppear { account.refresh(context: store.container?.mainContext) }
+        .navigationDestination(isPresented: $exporting) {
+            if let owner = account.activeOwner {
+                KeyExportIntroView(owner: owner, reader: account.primaryKeyReader) { exporting = false }
+            }
+        }
+        // Leaving the connected state closes the flow.
+        .onChange(of: account.activeOwner) { _, _ in exporting = false }
         .confirmationDialog(AccountCopy.createHeading, isPresented: $confirmingCreate, titleVisibility: .visible) {
             Button(AccountCopy.makeNewKey) { create() }
             Button(AccountCopy.usedItBefore) { sheet = .restore }
