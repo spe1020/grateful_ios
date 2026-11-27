@@ -7,10 +7,9 @@ created: 2026-11-25
 
 **Seth runs this on a spare physical device. Not yet run. No Simulator result counts.** About 45 minutes. Requested by Chief. Covers the device-only parts of key export r3 §1.7, plus Audit's screen-mirroring item.
 
-> ## ⚠ Not ready to run: E1 is undecided
-> This sheet assumes Seth rules **"dropped"**: the app no longer clears the clipboard when the key hides, and the 60-second expiry is the only clearing. That's Prep's and Audit's recommendation, **not a decision.**
-> - **Build:** the export commit Chief names **after** the E1 ruling and Audit's check of it. Record it here: `________`. **Don't run this on `cfd6097`** (draft PR #40): it still clears the clipboard on hide, so check A would fail.
-> - **If Seth keeps clear-on-hide,** checks A and B are wrong and the sheet must be revised first.
+> ## ⚠ Not ready to run: no build is named yet
+> Seth ruled B option 1 (8a3b1c2b): the app no longer clears the clipboard on hide; the 60 s expiry is the only clearing.
+> - **Build:** the export commit Chief names **after** Audit's check of the change. Record it here: `________`. **Don't run this on `cfd6097`** (draft PR #40): it still clears the clipboard on hide, so check A would fail.
 
 Screen text and behaviour were read from source at `cfd6097`; the clipboard steps describe that code **without** its clear-on-hide function. Recheck against the named build.
 
