@@ -99,6 +99,12 @@ struct RemoteImporter {
                 row.deletedAt = Date(timeIntervalSince1970: TimeInterval(at))
                 // The row is now based on the deletion: a revive is signed
                 // after it, and the pre-send check doesn't count it (P30 L1).
+                // D5: record which deletion, as ConflictReview.apply does, so
+                // meeting this same kind 5 on a later pass (after the person
+                // wrote on the day again) is nothing new, not a remote delete
+                // against pending edits. A newer kind 5 has other ids and
+                // still applies.
+                if let id = by.sorted().first { row.remoteEventID = id }
                 row.remoteCreatedAt = at
                 row.syncStateRaw = SyncState.synced.rawValue
                 summary.deleted += 1
