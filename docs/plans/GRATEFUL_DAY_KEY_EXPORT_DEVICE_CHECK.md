@@ -12,7 +12,7 @@ created: 2026-11-25
 > The key export source files and their text in `AccountCopy.swift` are unchanged since `0e37103`, `main` after #40 merged (same files as `357612a`, the head Audit passed). Later changes in the app: sync connections (#45), and the other-account count and private-only encryption wording (#46).
 > Seth ruled B option 1 (8a3b1c2b): the app no longer clears the clipboard on hide; the 60 s expiry is the only clearing.
 
-Screen text was checked against source at `0e37103`. The export code there writes to the clipboard with a 60 s expiry and has no clear-on-hide.
+Screen text was checked against source at `0e37103`; the export files and `AccountCopy.swift` are the same at `a254289`. The export code writes to the clipboard with a 60 s expiry and has no clear-on-hide.
 
 ## Safety
 - **These steps copy, show and paste a real private key, so use only a new throwaway.** Never your real key. Create it in the app (below), use it for nothing else, and **retire it afterwards.**
