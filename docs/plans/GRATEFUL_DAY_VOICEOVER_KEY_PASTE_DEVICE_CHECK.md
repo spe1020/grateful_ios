@@ -18,7 +18,7 @@ created: 2026-11-25
 - **Don't save, export, copy or send Console lines, and don't take a sysdiagnose.** Record only what the table asks for.
 - Paste the key nowhere except the app's import field.
 
-Build: `10ae4d6`; record the commit. A `git grep` of the app and package sources at `10ae4d6` for accessibility announcement calls finds none.
+Build: `f040127`; record the commit. A `git grep` of the app and package sources at `f040127` for accessibility announcement calls finds none.
 
 ## Setup
 1. Install the build. Open it from its icon, not from Xcode's debugger.
