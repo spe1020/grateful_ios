@@ -204,6 +204,42 @@ final class RemoteImportTests: XCTestCase {
         XCTAssertEqual(r.syncState, .conflict)
     }
 
+    /// D5 (Phase 1 simulator, B, kind 5 c9e816d2): another device deletes
+    /// a synced day, this iPhone applies the deletion, and the person writes
+    /// on that day again. The same deletion is met on every later pass; it
+    /// must count as the base the revive is signed after, not as a remote
+    /// delete against pending edits. At 10ae4d6 the row became a conflict
+    /// and the revive was never signed.
+    func testRewritingADayAfterApplyingItsRemoteDeletionIsNotAConflict() throws {
+        try insert("to go", on: "2026-11-20", owner: owner, state: .synced, remoteId: "v1")
+        let deletion = RemoteDay.deleted(at: 500, by: ["k5"])
+        try importer().apply(["2026-11-20": deletion], zone: zone)
+        XCTAssertNotNil(try row(owner: owner, "2026-11-20")?.deletedAt, "the deletion applied")
+        try JournalRepository(context: context, activeOwner: owner)
+            .save(text: "written again", for: TodayEditorModel.parse("2026-11-20", timeZone: zone)!)
+        // The next pass meets the same deletion again.
+        try importer().apply(["2026-11-20": deletion], zone: zone)
+        let r = try XCTUnwrap(row(owner: owner, "2026-11-20"))
+        XCTAssertEqual(r.syncState, .localOnly, "a pending revive, signed next, not a conflict")
+        XCTAssertNil(r.deletedAt)
+        XCTAssertEqual(r.notesText, "written again")
+        XCTAssertEqual(r.remoteEventID, "k5", "based on the deletion it already applied")
+        XCTAssertEqual(r.remoteCreatedAt, 500)
+    }
+
+    /// D5's guard: a NEWER deletion from another device, met after the
+    /// person wrote again, still makes the day a conflict (§4.2).
+    func testANewerRemoteDeletionAfterRewritingIsStillAConflict() throws {
+        try insert("to go", on: "2026-11-20", owner: owner, state: .synced, remoteId: "v1")
+        try importer().apply(["2026-11-20": .deleted(at: 500, by: ["k5"])], zone: zone)
+        try JournalRepository(context: context, activeOwner: owner)
+            .save(text: "written again", for: TodayEditorModel.parse("2026-11-20", timeZone: zone)!)
+        try importer().apply(["2026-11-20": .deleted(at: 900, by: ["k5b"])], zone: zone)
+        let r = try XCTUnwrap(row(owner: owner, "2026-11-20"))
+        XCTAssertEqual(r.syncState, .conflict)
+        XCTAssertEqual(r.notesText, "written again")
+    }
+
     func testEditAfterSyncBecomesPendingEdit() throws {
         try insert("synced", on: "2026-11-20", owner: owner, state: .synced, remoteId: "v1")
         try JournalRepository(context: context, activeOwner: owner).save(text: "edited", for: TodayEditorModel.parse("2026-11-20", timeZone: zone)!)
