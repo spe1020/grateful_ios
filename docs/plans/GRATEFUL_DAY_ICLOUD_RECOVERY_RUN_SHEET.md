@@ -6,7 +6,7 @@ created: 2026-11-25
 ---
 
 **Seth runs this. Agents don't.** Phase 1 exit criterion 2. Replaces step 3 of `GRATEFUL_DAY_PHASE1_RECOVERY_RUN_SHEET_2026_11_25.md`.
-Build: iOS main `10ae4d6`. Its app code is identical to `c910134` (the only difference is one test file). All quoted screen text was checked against source at `10ae4d6`. **Not yet run.** If the app says something different, record it.
+Build: iOS main `f040127`. All quoted screen text was checked against source at `10ae4d6`. Between `10ae4d6` and `f040127`, no account, backup or restore source file changed; the app changes are in sync, the conflict screen and a Debug-only test fixture. **Not yet run.** If the app says something different, record it.
 
 ## Decide first: which device is Device 1
 Device 1 creates a new disposable identity. **Your primary iPhone can't be Device 1 or Device 2:** either role means switching its account.
@@ -30,8 +30,8 @@ With only one spare device and no approval for B, record **BLOCKED: no second no
 
 ## Build (both devices)
 1. `git -C <your grateful_ios checkout> fetch origin`
-2. `git -C <your grateful_ios checkout> worktree add ../grateful_ios-recovery 10ae4d6` (a separate folder, so your working checkout and its local changes aren't touched)
-3. In it, `git rev-parse --short HEAD` must print `10ae4d6`.
+2. `git -C <your grateful_ios checkout> worktree add ../grateful_ios-recovery f040127` (a separate folder, so your working checkout and its local changes aren't touched)
+3. In it, `git rev-parse --short HEAD` must print `f040127`.
 4. Open `App/GratefulDay.xcodeproj`, scheme **GratefulDay**, pick your team (don't commit that), Run on each device. **Check the Run destination every time. Never select the primary iPhone.**
 
 ## Part 1: Device 1 (create, back up, write)
@@ -79,7 +79,7 @@ With only one spare device and no approval for B, record **BLOCKED: no second no
 - Phase 1 criterion 2 closes only on PASS.
 
 ## Send back
-Date and times (backup, found), both device models and iOS versions, `10ae4d6`, both shortened npubs, which rows Device 2 showed, R1 to R4, screenshots. **No nsec, no reflection text.**
+Date and times (backup, found), both device models and iOS versions, `f040127`, both shortened npubs, which rows Device 2 showed, R1 to R4, screenshots. **No nsec, no reflection text.**
 
 ## Never, during or after
 No **Remove account and local data**. No **Delete backup**. No deleting Keychain items or the app. No reset. Nothing on the primary iPhone. Leave the test accounts and the new backup in place; cleanup needs your explicit go. The new backup will also sync to your primary iPhone's iCloud Keychain. That's expected; do nothing with it.
@@ -87,4 +87,4 @@ No **Remove account and local data**. No **Delete backup**. No deleting Keychain
 ## Result record (physical devices only)
 | Date | Setup | Devices / iOS | Build | R1 | R2 (minutes) | R3 | R4 | Overall | Evidence |
 |---|---|---|---|---|---|---|---|---|---|
-| | | | `10ae4d6` | | | | | **BLOCKED: awaiting devices** | |
+| | | | `f040127` | | | | | **BLOCKED: awaiting devices** | |
