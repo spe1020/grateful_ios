@@ -84,6 +84,8 @@ final class SharedConnections: RelayTransport, @unchecked Sendable {
 
     private func socketWentDown(_ socket: Socket) {
         lock.withLock {
+            // Closed by `closeAll` (the pass ended or stopped): not a drop.
+            if closed { return }
             var st = stats[socket.url, default: Stats()]
             st.drops += 1
             if let code = socket.handshakeStatus { st.handshakeStatuses.append(code) }

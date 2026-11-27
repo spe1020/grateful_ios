@@ -431,6 +431,8 @@ final class SharedConnectionsPassTests: XCTestCase {
             XCTAssertEqual(r.connectCount, 1, "\(r.url.host!): one socket for the whole pass")
             XCTAssertEqual(r.closeCount, 1, "\(r.url.host!): closed when the pass ended")
         }
+        // Closing at the end of the pass isn't logged as a drop.
+        XCTAssertTrue(SyncLog.recent.contains { $0.hasPrefix("sockets this pass:") && $0.contains("dials 1 drops 0") && !$0.contains("drops 1") })
         let writes = RelaySet.defaultWrite
         for r in relays where writes.contains(r.url) {
             XCTAssertEqual(r.publishedFrames.count, 12, "\(r.url.host!): each day sent once")
