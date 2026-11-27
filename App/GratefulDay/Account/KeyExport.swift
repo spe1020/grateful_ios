@@ -86,12 +86,11 @@ struct SystemDeviceOwnerAuthenticator: DeviceOwnerAuthenticating {
     }
 }
 
-/// The pasteboard operations the flow uses. `UIPasteboard` conforms; tests
-/// inject a recording fake.
+/// The one pasteboard operation the flow uses: the D3 write. The flow never
+/// reads or clears the pasteboard (Seth, E1 option 1: the 60 s expiry is the
+/// only clearing). `UIPasteboard` conforms; tests inject a recording fake.
 @MainActor
 protocol ExportPasteboard: AnyObject {
-    var changeCount: Int { get }
-    var items: [[String: Any]] { get set }
     func setItems(_ items: [[String: Any]], options: [UIPasteboard.OptionsKey: Any])
 }
 
@@ -151,8 +150,6 @@ final class KeyExportSession {
     private var authorized = false
     /// The bech32 key, only between a read and the next hide (S2).
     private var nsec: String?
-    /// The `changeCount` right after our own write, for the E1 clear-on-hide guard.
-    private var pasteboardWrite: Int?
     private var timeoutTask: Task<Void, Never>?
 
     init(owner: String,
@@ -231,7 +228,6 @@ final class KeyExportSession {
     func copy() {
         guard phase == .ready, let nsec else { return }
         pasteboard.setItems([[UTType.utf8PlainText.identifier: nsec]], options: [.localOnly: true, .expirationDate: Date.now.addingTimeInterval(60)])
-        pasteboardWrite = pasteboard.changeCount
         copiedNotice = true
         announce(AccountCopy.exportCopied)
     }
@@ -249,7 +245,8 @@ final class KeyExportSession {
 
     /// Hide the key, drop it, and pop back to Screen 1. Seeing it again needs
     /// a new authentication. Called on leaving Screen 3, Done, leaving the
-    /// foreground and the 2-minute timeout.
+    /// foreground and the 2-minute timeout. It never touches the pasteboard:
+    /// a copied key stays until its 60 s expiry (E1, option 1).
     func hide() {
         timeoutTask?.cancel()
         timeoutTask = nil
@@ -261,21 +258,6 @@ final class KeyExportSession {
         copiedNotice = false
         screenshotNotice = false
         isRevealing = false
-        clearPasteboardOnHide()
-    }
-
-    /// E1, open for Seth: the r2 S3+ rule. When the key hides, clear the
-    /// pasteboard only if nothing was copied after our write (`changeCount`
-    /// still matches), so a newer copy is never wiped. This and its call in
-    /// `hide()` are the only pasteboard touch besides the D3 write. If Seth
-    /// drops E1, delete this function, its call and its test; the 60 s
-    /// expiry stays the only clearing.
-    func clearPasteboardOnHide() {
-        guard let ours = pasteboardWrite else { return }
-        pasteboardWrite = nil
-        if pasteboard.changeCount == ours {
-            pasteboard.items = []
-        }
     }
 
     private func startTimeout() {

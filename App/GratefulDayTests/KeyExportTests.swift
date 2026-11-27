@@ -35,18 +35,14 @@ private final class FakeAuthenticator: DeviceOwnerAuthenticating {
     }
 }
 
-/// Records every write and its options, and bumps `changeCount` like UIPasteboard.
+/// Records every write and its options, and bumps `changeCount` like
+/// UIPasteboard. The protocol has only `setItems`, so the flow can't read or
+/// clear the pasteboard through it.
 @MainActor
 private final class FakePasteboard: ExportPasteboard {
     private(set) var changeCount = 0
     private(set) var writes: [(items: [[String: Any]], options: [UIPasteboard.OptionsKey: Any])] = []
-    private(set) var itemAssignments = 0
     private var stored: [[String: Any]] = []
-
-    var items: [[String: Any]] {
-        get { stored }
-        set { stored = newValue; itemAssignments += 1; changeCount += 1 }
-    }
 
     func setItems(_ items: [[String: Any]], options: [UIPasteboard.OptionsKey: Any]) {
         writes.append((items, options))
@@ -54,20 +50,8 @@ private final class FakePasteboard: ExportPasteboard {
         changeCount += 1
     }
 
-    /// Another app, or the person, copying something after us.
-    func somethingElseCopied() {
-        stored = [[UTType.utf8PlainText.identifier: "later copy"]]
-        changeCount += 1
-    }
-
     var text: String? { stored.first?[UTType.utf8PlainText.identifier] as? String }
 }
-
-/// E1 is open for Seth. While clear-on-hide ships (r2 S3+), this is true and
-/// `testIfE1IsDroppedHidingLeavesThePasteboardUnchanged` is skipped. If Seth
-/// drops E1: delete `clearPasteboardOnHide()`, its call in `hide()` and
-/// `testE1ClearOnHideOnlyClearsOurOwnWrite`, and set this to false.
-private let e1ClearOnHideShipped = true
 
 @MainActor
 final class KeyExportTests: XCTestCase {
@@ -304,40 +288,11 @@ final class KeyExportTests: XCTestCase {
         XCTAssertNotNil(s.displayedGroups)
     }
 
-    // MARK: E1 (open for Seth): clear-on-hide, r2 S3+
+    // MARK: E1 (Seth, option 1): no clear-on-hide
 
-    func testE1ClearOnHideOnlyClearsOurOwnWrite() async {
-        // Nothing copied after us: hiding clears our item.
-        var s = await revealed()
-        s.copy()
-        XCTAssertEqual(pasteboard.text, expectedNsec)
-        s.hide()
-        XCTAssertNil(pasteboard.text)
-        XCTAssertEqual(pasteboard.itemAssignments, 1)
-
-        // Something copied after us: hiding never wipes it.
-        pasteboard = FakePasteboard()
-        s = await revealed()
-        s.copy()
-        pasteboard.somethingElseCopied()
-        let count = pasteboard.changeCount
-        s.hide()
-        XCTAssertEqual(pasteboard.text, "later copy")
-        XCTAssertEqual(pasteboard.changeCount, count)
-        XCTAssertEqual(pasteboard.itemAssignments, 0)
-
-        // Nothing copied by us: hiding doesn't touch the pasteboard.
-        pasteboard = FakePasteboard()
-        s = await revealed()
-        s.hide()
-        XCTAssertEqual(pasteboard.changeCount, 0)
-    }
-
-    /// Ready for the other E1 outcome (Audit, Prep): with clear-on-hide
-    /// dropped, hiding, `.inactive` and the timeout leave the pasteboard
-    /// unchanged. Skipped while clear-on-hide ships.
-    func testIfE1IsDroppedHidingLeavesThePasteboardUnchanged() async throws {
-        try XCTSkipIf(e1ClearOnHideShipped, "E1 open: clear-on-hide (r2 S3+) still ships")
+    /// Hiding, `.inactive` and the timeout leave the pasteboard unchanged:
+    /// the copied key stays until its 60 s expiry, and nothing else is written.
+    func testHidingInactiveAndTimeoutLeaveThePasteboardUnchanged() async throws {
         var s = await revealed()
         s.copy()
         s.hide()
@@ -483,9 +438,7 @@ final class KeyExportTests: XCTestCase {
         }
         let export = try exportCode()
         XCTAssertEqual(export.components(separatedBy: ".setItems(").count - 1, 1, "exactly one write")
-        XCTAssertEqual(export.components(separatedBy: "pasteboard.items = []").count - 1, 1,
-                       "the only other touch is E1 clear-on-hide")
-        for banned in [".string =", ".string=", "textSelection", "ShareLink", "UIActivityViewController", "UIDocumentPicker", "fileExporter", "QRCode", "CIFilter"] {
+        for banned in [".items", "changeCount", "clearPasteboard", ".string =", ".string=", "textSelection", "ShareLink", "UIActivityViewController", "UIDocumentPicker", "fileExporter", "QRCode", "CIFilter"] {
             XCTAssertFalse(export.contains(banned), banned)
         }
     }
