@@ -108,17 +108,32 @@ jobs:
       - name: Run unit and UI tests
         # Picks the first available iPhone simulator, so a runner image change
         # in device names doesn't break the job.
+        #
+        # Warm-up (Chief P181): the first UI test's app launch timed out on a
+        # cold simulator ("Timed out while launching application via Xcode",
+        # #45; "Timed out while acquiring background assertion", #43). So:
+        # boot and wait for the simulator, build, launch the app once outside
+        # the tests with no relays, then uninstall it so every test still
+        # starts from a fresh install, and only then run the tests.
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for r,v in sorted(d.items(), reverse=True) if "iOS" in r for x in v if x["name"].startswith("iPhone")))')
           echo "Simulator: $UDID"
-          xcodebuild test \
-            -project App/GratefulDay.xcodeproj \
-            -scheme GratefulDay \
-            -destination "id=$UDID" \
-            -derivedDataPath "$RUNNER_TEMP/DerivedData-UITests" \
-            -resultBundlePath "$RUNNER_TEMP/AppTests.xcresult" \
-            -disableAutomaticPackageResolution \
-            -skipPackagePluginValidation
+          FLAGS=(-project App/GratefulDay.xcodeproj -scheme GratefulDay -destination "id=$UDID"
+                 -derivedDataPath "$RUNNER_TEMP/DerivedData-UITests"
+                 -disableAutomaticPackageResolution -skipPackagePluginValidation)
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcodebuild build-for-testing "${FLAGS[@]}"
+          APP="$RUNNER_TEMP/DerivedData-UITests/Build/Products/Debug-iphonesimulator/GratefulDay.app"
+          BUNDLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")
+          xcrun simctl install "$UDID" "$APP"
+          # The warm-up is best effort: if it fails, the tests still run.
+          time xcrun simctl launch "$UDID" "$BUNDLE" -uiTestNoRelays || echo "warm-up launch failed"
+          sleep 10
+          xcrun simctl terminate "$UDID" "$BUNDLE" || true
+          xcrun simctl uninstall "$UDID" "$BUNDLE"
+          xcodebuild test-without-building "${FLAGS[@]}" \
+            -resultBundlePath "$RUNNER_TEMP/AppTests.xcresult"
       - name: Upload test results
         # The .xcresult holds each failure's screenshots and accessibility
         # audit details, which the log doesn't (Chief P55).
