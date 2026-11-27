@@ -23,6 +23,7 @@ Screen text and behaviour were read from source at `cfd6097`; the clipboard step
 - On the Mac, **quit any clipboard manager**: it could keep a copy.
 - Checks F and G can save the key into **Photos**. Use a device with **iCloud Photos off**; if you can't, the image or video may sync to your other devices, and you may skip F's screenshot or G (record SKIPPED).
 - No **Remove account and local data**, no **Delete backup**, no reset.
+- If Safari or iOS offers to **Save Password** after you paste the key, tap **Not Now**. Saving it would put the throwaway key in your iCloud Keychain passwords. If it's saved by mistake, delete it in the Passwords app before Finish and note that in Results.
 
 ## You need
 1. A spare iPhone or iPad, iOS 17+, **with a passcode**, with no Grateful Day account or written entries. If it has either, stop.
@@ -44,10 +45,11 @@ Screen text and behaviour were read from source at `cfd6097`; the clipboard step
 2. Within 45 seconds, switch to the other client and paste into its secret-key field. Log in.
 3. Compare the npub it shows with the account line on Screen 3.
 4. Return to Grateful Day: it should be on Screen 1.
+- Record **Save Password prompt: shown / not shown**.
 - **PASS:** the paste fills the field after switching apps, and the other client shows the **same npub**.
 - **FAIL:** nothing to paste within 45 seconds, a different npub, or login rejects the pasted text.
 
-**A2, web decryption:** in a private browser window on gratefulday.space, log in with the same key (open Screen 3, **Copy journal key**, paste into the site's key field within 45 seconds). The site keeps the key in browser storage, so **when A2 is done, log out and then close that private window.** **PASS:** same account, and the Setup reflection appears and reads the same. If the site offers no key field, record BLOCKED.
+**A2, web decryption:** in a private browser window on gratefulday.space, log in with the same key (open Screen 3, **Copy journal key**, paste into the site's key field within 45 seconds). The site keeps the key in browser storage, so **when A2 is done, log out and then close that private window.** **PASS:** same account, and the Setup reflection appears and reads the same. If the site offers no key field, record BLOCKED. Record **Save Password prompt: shown / not shown**.
 
 ## B. The clipboard after 60 seconds
 First, in the other client, return to its empty secret-key login field (log out of the throwaway if you need to).
@@ -126,8 +128,8 @@ Each check is **PASS**, **FAIL**, **INCONCLUSIVE**, **BLOCKED** or **SKIPPED**. 
 |---|---|---|
 | Setup: Advanced row and Screen 1 | not run | |
 | Authentication asked on every reopen | not run | |
-| A same npub in another client | not run | |
-| A2 web decryption | not run | |
+| A same npub in another client (Save Password prompt: ) | not run | |
+| A2 web decryption (Save Password prompt: ) | not run | |
 | B1 empty after 60 s | not run | |
 | B2 newer copy survives | not run | |
 | C Universal Clipboard blocked (controls: ) | not run | |
