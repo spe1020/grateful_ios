@@ -343,7 +343,10 @@ final class AppShellUITests: XCTestCase {
     @MainActor
     private static func isWisdomCardContrastFalsePositive(_ issue: XCUIAccessibilityAuditIssue, _ app: XCUIApplication) -> Bool {
         guard issue.auditType == .contrast, let element = issue.element else { return false }
-        let card = app.descendants(matching: .any)["wisdom.card"].firstMatch
+        // The cream surface is now drawn by the Today card (todayCard), which
+        // holds the Wisdom page; fall back to the old wisdom.card frame.
+        let todayCard = app.descendants(matching: .any)["todayCard"].firstMatch
+        let card = todayCard.exists ? todayCard : app.descendants(matching: .any)["wisdom.card"].firstMatch
         guard card.exists else { return false }
         let cardFrame = card.frame, issueFrame = element.frame
         guard !cardFrame.isEmpty, !issueFrame.isEmpty, cardFrame.contains(issueFrame) else { return false }

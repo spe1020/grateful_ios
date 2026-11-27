@@ -73,6 +73,7 @@ struct WisdomCard: View {
                     Text("A reading by Grateful Day")
                         .font(.caption)
                         .foregroundStyle(GDColor.foreground)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(reading)
                         .font(GDFont.body)
                         .foregroundStyle(GDColor.foreground)

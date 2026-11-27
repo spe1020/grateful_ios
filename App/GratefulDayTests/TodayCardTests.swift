@@ -51,11 +51,19 @@ final class TodayCardTests: XCTestCase {
         XCTAssertEqual(TodayCardCopy.affirmationLabel, "Daily Affirmation")
     }
 
+    /// Every file in the built app, minus the hosted test bundle (the
+    /// `.xctest` Xcode copies into PlugIns only to run these tests; it never
+    /// ships, and it holds `readers_guard.json`).
+    private static func appFiles() throws -> [URL] {
+        let app = Bundle(for: JournalStore.self).bundleURL
+        let all = try XCTUnwrap(FileManager.default.enumerator(at: app, includingPropertiesForKeys: nil)?.allObjects as? [URL])
+        return all.filter { !$0.pathComponents.contains { $0.hasSuffix(".xctest") } }
+    }
+
     /// Criterion 8: nothing from the web's teachings ships in the app. Walks
     /// the built app bundle, including GratefulDayCore's resource bundle.
     func testNoTeachingDataInTheAppBundle() throws {
-        let app = Bundle(for: JournalStore.self).bundleURL
-        let urls = try XCTUnwrap(FileManager.default.enumerator(at: app, includingPropertiesForKeys: nil)?.allObjects as? [URL])
+        let urls = try Self.appFiles()
         XCTAssertTrue(urls.contains { $0.lastPathComponent == "affirmations.json" }, "the walk reaches the core resources")
         XCTAssertFalse(urls.contains { $0.lastPathComponent.lowercased().contains("teaching") })
         for url in urls where url.pathExtension == "json" {
@@ -165,8 +173,7 @@ final class TodayCardTests: XCTestCase {
     /// bundle holds hashes only, never the text.
     func testNoReadersTextInTheAppBundle() throws {
         let g = try readersGuard()
-        let app = Bundle(for: JournalStore.self).bundleURL
-        let urls = try XCTUnwrap(FileManager.default.enumerator(at: app, includingPropertiesForKeys: nil)?.allObjects as? [URL])
+        let urls = try Self.appFiles()
         XCTAssertTrue(urls.contains { $0.lastPathComponent == "affirmations.json" }, "the walk reaches the core resources")
         XCTAssertTrue(urls.contains { $0.lastPathComponent == "wisdom.json" })
         XCTAssertFalse(urls.contains { $0.lastPathComponent.lowercased().contains("teaching") })
