@@ -11,6 +11,10 @@ created: 2026-11-25
 
 Build: iOS `a254289`, which includes the D2 fix (#41) and the D1 (#38) and D5 (#42) fixes; record the commit. **Don't run this on `10ae4d6`.** If Chief names a newer build, ask whether these steps still apply. Screen text and layout were read from source at `fd67ebb`; the conflict screen's source is unchanged from there to `f040127`. Expected results were re-checked against the sync changes in #38 and #42. Between `f040127` and `a254289`, the conflict and Set aside screen files didn't change. The importer, publish-pass, delivery-rule and outbox files didn't change either. #45 changed how sync connects to relays (one connection per relay per pass, dialed again at most once if it drops). Reading the source, that changes none of the expected results below; the app wasn't run to confirm it, so record any difference.
 
+**D6 (open, Medium: unexplained, not reproduced; decision log P190, P191, P194).** On one CI Simulator run, a tap on **Let it stay deleted** was ignored and the checkmark stayed on **Keep this iPhone's**. A local run of the picker tests later passed 140 of 140 on `c5ecd32` (Xcode 27, iOS 27.2; CI uses Xcode 26.6, iOS 26.5), and #49's later CI run passed that test. Neither explains the miss. The **D6 checkmark step** in Part 2 looks for it with a finger. A run without an ignored tap doesn't close D6.
+
+**D7 (open, High; P192).** On `a254289`, S3 web → iOS failed in the Simulator: after relays dropped an entry deleted on the web, the iPhone never marked the day deleted. That run didn't test screen B's case (an unsynced iPhone edit), so what rounds 6 and 7 show on this build isn't established. Before running Part 2's screen B, ask Chief which build to use.
+
 This check doesn't test the **D5** fix. Delete from the web only in screen B's steps. If a deletion screen or line appears anywhere these steps don't expect it, that's a finding on this build: record it, tap **Not now** and stop.
 
 ## Safety
@@ -113,8 +117,20 @@ Tap both options near the top, centre and bottom of each row, selecting the othe
 | B | Keep this iPhone's | "This day goes back to your account with what you wrote here." | | | |
 | B | Let it stay deleted | "What you wrote here goes to Set aside, and this day is removed from this iPhone." | | | |
 
+### D6 checkmark step (every time a deletion screen opens, rounds 4 to 7)
+Before you use **Done**, tap each deletion option and confirm the checkmark moves. Start with the option that **isn't** checked: tap it once, in the centre, and confirm the checkmark moves to it. Then tap the first option once and confirm the checkmark moves back. In rounds 4 and 6, do this as soon as the screen opens, before the probe.
+
+If a tap doesn't move the checkmark, that's a **FAIL** and a possible D6 repeat. **Don't tap Done:** it would apply the option still checked, which may be the one that deletes. Don't tap that row again before recording the screen as it is (screenshot, text covered). Note the round, the option tapped, whether it was the first tap after the screen opened and roughly how long the screen had been open. Then tap **Not now** and stop. A screen recording running from before you open the screen helps (text covered before sharing).
+
+| Round | Screen | Unchecked option tapped: checkmark moved? | Other option tapped: moved back? |
+|---|---|---|---|
+| 4 | A | | |
+| 5 | A | | |
+| 6 | B | | |
+| 7 | B | | |
+
 ### Apply each option once
-Select the **other** option first, then tap the target once in the centre, check the checkmark and line, and tap **Done**. Keep the app open and online for at least 2 minutes, and until any Saving mark clears. Then check a **new** private window as the throwaway (wait about 10 s after it loads).
+Select the **other** option first, then tap the target once in the centre, check the checkmark and line, and tap **Done**. If the checkmark didn't move to the target, don't tap **Done**: follow the D6 step's failure instructions. Keep the app open and online for at least 2 minutes, and until any Saving mark clears. Then check a **new** private window as the throwaway (wait about 10 s after it loads).
 
 | Round | Screen: tap | Device after Done | Set aside | Web, new private window |
 |---|---|---|---|---|
@@ -172,7 +188,7 @@ An empty web page alone doesn't show that the deletion reached the relays. **Rig
 Close and reopen the app once: both results stay and neither conflict returns.
 
 ## PASS / FAIL
-- **PASS:** every probe tap in rounds 1, 4 and 6 selects the option tapped; all seven rounds give the results in their tables; round 5's relay check passes; and every Part 3 and Part 4 check passes.
+- **PASS:** every probe tap in rounds 1, 4 and 6 selects the option tapped; every D6 checkmark step tap in rounds 4 to 7 moves the checkmark; all seven rounds give the results in their tables; round 5's relay check passes; and every Part 3 and Part 4 check passes.
 - **FAIL, selection:** any tap inside an option's row doesn't select that option.
 - **FAIL, button isolation:** a tap anywhere other than a button's own words expands a text, applies **Keep both for all** or changes a selection; or one **Show all** expands the other text. A tap right at the edge of the words is inconclusive: repeat it farther away. A button that doesn't work when its words are tapped is also a FAIL.
 - **FAIL, result:** the right option shows as selected, but the device, Set aside, web or relay result differs. Also fail if text that should be kept or set aside is in neither place, or if a deletion happens that wasn't chosen. Stop and leave the device as it is.
@@ -194,8 +210,9 @@ Not covered: more than two conflicting days, **Keep both for all** across mixed 
 | Both changed | | 1: 2: 3: | not run |
 | A: deleted here | | 4: 5: | not run |
 | B: deleted from account | | 6: 7: | not run |
+| D6 checkmark step | | 4: 5: 6: 7: | not run |
 | Show all (Part 3) | Do-nothing taps: | First: Second: | not run |
 | Keep both for all (Part 4, date: ) | Do-nothing taps: | Applied result: | not run |
 | Round 5 relay check | Event ID: | Relays holding it: / still returning "web 5": | not run |
 
-Send back both tables and the probe tables, screenshots (text covered), the device model, iOS version, build and throwaway npub. No nsec, no reflection text.
+Send back both tables, the probe tables and the D6 step table, screenshots (text covered), the device model, iOS version, build and throwaway npub. No nsec, no reflection text.
