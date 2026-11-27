@@ -7,6 +7,8 @@ created: 2026-11-25
 
 **Seth runs this on a spare physical device. Not yet run. No Simulator result counts.** About 15 minutes. Requested by Chief (candidate defect **D4**). **Run it on its own, not combined with the other checks.**
 
+Approved by Seth (L, 8a3b1c2b). **No result from this check shows the key is safe.** A negative result is inconclusive.
+
 **Why:** in the Simulator, with accessibility active under UI automation, Audit found a throwaway key's full nsec in the system log after an edit-menu **Paste** into the import field: process `GratefulDay`, category `AXRuntimeNotifications`, Info level, an announcement ending ", paste". The field is a secure field. Not confirmed on a device, with VoiceOver, or for the app's own **Paste** button.
 
 ## Read before running
@@ -57,13 +59,13 @@ Copy a harmless word. Stop Console streaming, clear its window and quit it. Turn
 | Result | When |
 |---|---|
 | **FAIL: D4** | In B or C, VoiceOver speaks any of the key's text, **or** Console shows any of it. Say which method and which of the two |
-| **PASS** | The field filled, nothing from the key was spoken, A found at least one line with "banana" readable, **every** pair from A was checked for this paste with readable announcement text, and none showed key text |
+| **NOT REPRODUCED** | The field filled, nothing from the key was spoken, A found at least one line with "banana" readable, **every** pair from A was checked for this paste with readable announcement text, and none showed key text. Per Seth's L ruling (8a3b1c2b), this doesn't show the key is safe. D4 stays open |
 | **INCONCLUSIVE** | Nothing was spoken, but the log can't be judged: A found no "banana" line, or for any pair from A the text is `<private>` or missing, the line is absent, or the pair wasn't checked. Also if you couldn't listen to the whole announcement. Record "not spoken" separately where that's true |
 | **NOT TESTED** | The paste didn't fill the field |
 
 - `<private>` doesn't show whether the key was or wasn't stored. Don't install a logging profile to reveal it.
 - **If C also fails,** moving import to the app's button wouldn't fix D4 by itself. Report it that way.
-- A pass covers only this device, iOS version, build and paste route, **and only the processes and categories A found**. It doesn't show the key was logged nowhere else.
+- A NOT REPRODUCED result covers only this device, iOS version, build and paste route, **and only the processes and categories A found**. It doesn't show the key was logged nowhere else.
 
 ## Record (physical device only)
 **Pairs found in A** (names only, no message text):
