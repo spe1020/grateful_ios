@@ -342,6 +342,7 @@ final class KeyExportTests: XCTestCase {
             "Only paste it into an app you trust.",
             "Never send it in a message or email, or post it.",
             "No one from Grateful Day will ever ask you for it.",
+            "If your browser offers to save your private key as a password, choose Not Now.",
         ])
         XCTAssertEqual(AccountCopy.exportShow, "Show journal key")
         XCTAssertEqual(AccountCopy.cancel, "Cancel")

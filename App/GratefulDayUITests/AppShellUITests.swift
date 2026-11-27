@@ -440,6 +440,11 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5), "offered once connected")
         row.tap()
         XCTAssertTrue(app.staticTexts["Your journal key is your account"].waitForExistence(timeout: 5))
+        // Seth P165: the Save Password bullet is on Screen 1 (literal, so
+        // removing it from the copy fails here too).
+        let savePassword = app.staticTexts["If your browser offers to save your private key as a password, choose Not Now."]
+        if !savePassword.exists { app.swipeUp() }
+        XCTAssertTrue(savePassword.waitForExistence(timeout: 5), "Save Password bullet shown")
         XCTAssertTrue(app.buttons["export.show"].exists)
         XCTAssertFalse(app.staticTexts["export.key"].exists, "no key on Screen 1")
         app.buttons["export.cancel"].tap()

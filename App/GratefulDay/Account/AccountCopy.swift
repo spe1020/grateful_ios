@@ -130,6 +130,9 @@ enum AccountCopy {
         "Only paste it into an app you trust.",
         "Never send it in a message or email, or post it.",
         "No one from Grateful Day will ever ask you for it.",
+        // Seth P165 (Option 2): a browser's Save Password prompt isn't the
+        // app's own iCloud Keychain backup.
+        "If your browser offers to save your private key as a password, choose Not Now.",
     ]
     static let exportShow = "Show journal key"
     /// Also `NSFaceIDUsageDescription` in the app target's Info.plist settings.
