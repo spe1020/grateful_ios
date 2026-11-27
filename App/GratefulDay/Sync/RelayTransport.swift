@@ -51,6 +51,12 @@ final class WebSocketConnection: RelayConnection, @unchecked Sendable {
     }
 }
 
+extension WebSocketConnection: HandshakeReporting {
+    /// The HTTP status of the upgrade response, e.g. 429 when a relay
+    /// refuses the handshake; nil if none arrived. A number only (I9).
+    var handshakeStatus: Int? { (task.response as? HTTPURLResponse)?.statusCode }
+}
+
 /// A relay message we care about, parsed leniently: anything else is ignored.
 enum RelayMessage: Equatable {
     case event(subscription: String, event: NostrEvent)
