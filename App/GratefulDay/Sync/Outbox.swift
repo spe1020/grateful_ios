@@ -60,6 +60,17 @@ struct Outbox {
         }
     }
 
+    /// Live rows for this owner acknowledged by enough of `write`: the
+    /// complement of `due` (backoff aside). D1/P102 looks among them for
+    /// sends whose pass ended before the entry was marked synced.
+    func acknowledged(write: [URL]) throws -> [OutboxEvent] {
+        let owner = self.owner
+        let live = try context.fetch(FetchDescriptor<OutboxEvent>(predicate: #Predicate {
+            $0.ownerPubkey == owner && !$0.superseded && !$0.supersededByRemote
+        }, sortBy: [SortDescriptor(\.eventCreatedAt)]))
+        return live.filter { DeliveryRules.state(acked: $0.ackedRelays, write: write) == .synced }
+    }
+
     /// The earliest time a live, unsynced row of this owner is due again
     /// after a backoff, or nil when none is waiting on one. Only times after
     /// `after` count: a row that was already due when the pass started and
