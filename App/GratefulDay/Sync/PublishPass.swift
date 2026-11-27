@@ -40,16 +40,30 @@ struct PublishPass {
     private var outbox: Outbox { Outbox(context: context, owner: owner) }
     private var importer: RemoteImporter { RemoteImporter(context: context, owner: owner, now: now) }
 
-    /// Sign what changed locally, re-check relays that didn't answer last
-    /// time, then send every due row. Returns nil when nothing may be
-    /// published (unknown or empty write set).
+    /// Sign what changed locally, finish sends an earlier pass was stopped
+    /// in, re-check relays that didn't answer last time, then send every due
+    /// row. Returns nil when nothing may be published (unknown or empty
+    /// write set).
     func run() async throws -> Summary? {
         guard let write = set.write, DeliveryRules.required(write: write) != nil else { return nil }
         var summary = Summary()
         try signPending(&summary)
         let due = try outbox.due(write: write, now: now())
-        SyncLog.note("publish pass", "signed \(summary.signed), due \(due.count), write: \(SyncLog.hosts(write))")
-        for row in try outbox.awaitingRecheck() {
+        let owed = try owedRecheck(write: write)
+        SyncLog.note("publish pass", "signed \(summary.signed), due \(due.count), owed a re-check \(owed.count), write: \(SyncLog.hosts(write))")
+        // D1/P102: the post-send re-check these rows were owed, then markSynced.
+        for row in owed {
+            guard isCurrent(), !Task.isCancelled else { return summary }
+            guard row.isLive else { continue }
+            let tag = "kind \(row.kind) \(SyncLog.id(row.eventId))"
+            SyncLog.note("re-checking after an interrupted send", tag)
+            if try await recheck(row, relays: readAndWrite, write: write, summary: &summary) {
+                try finishSend(row, write: write, tag: tag, summary: &summary)
+            }
+        }
+        // Those rows' re-check list was just asked as part of read ∪ write.
+        let rechecked = Set(owed.map(\.persistentModelID))
+        for row in try outbox.awaitingRecheck() where !rechecked.contains(row.persistentModelID) {
             guard isCurrent() else { return summary }
             try await recheck(row, relays: row.recheckRelays, write: write, summary: &summary)
         }
@@ -192,7 +206,19 @@ struct PublishPass {
         row.recheckRelays = write.filter { fetched.outcomes[$0] != .answered }
         try context.save()
         // Re-check after publishing: same test, any timestamp (r2.1 item 3).
-        try await recheck(row, relays: readAndWrite, write: write, summary: &summary)
+        // The acks are saved and the entry isn't marked yet: if the pass ends
+        // here (killed, cancelled, account changed), that stored state is
+        // what `owedRecheck` finds, and the next pass runs this re-check.
+        guard try await recheck(row, relays: readAndWrite, write: write, summary: &summary) else {
+            SyncLog.note("not saved to the account yet", "\(tag): the re-check after sending didn't finish")
+            return
+        }
+        try finishSend(row, write: write, tag: tag, summary: &summary)
+    }
+
+    /// After the post-send re-check ran to the end: a row still live and
+    /// acknowledged by enough write relays bases its entry on this event.
+    private func finishSend(_ row: OutboxEvent, write: [URL], tag: String, summary: inout Summary) throws {
         if row.isLive, DeliveryRules.state(acked: row.ackedRelays, write: write) == .synced {
             try markSynced(row)
             summary.synced += 1
@@ -200,23 +226,46 @@ struct PublishPass {
         }
     }
 
+    /// D1/P102: live rows acknowledged by enough write relays whose entry
+    /// was never marked synced, because the pass that sent them ended
+    /// between `record` and `markSynced` (app closed, backgrounded, account
+    /// changed). Nothing else sends them again: their acks keep them out of
+    /// `due`. They're owed the post-send re-check across read ∪ write, and
+    /// then `markSynced`. A row whose re-check did run is never here: it was
+    /// either stopped (not live) or marked synced in the same main-actor
+    /// step, and any later edit changes `updatedAt` and supersedes it.
+    ///
+    /// Residual, by design: until this re-check has run, the entry keeps its
+    /// old base. A remote edit that reaches relays before then (even one
+    /// based on this very event) is a conflict, either in the importer,
+    /// which runs first in a pass, or in this re-check, which counts any
+    /// unbased version at any timestamp (r2.1 item 3).
+    private func owedRecheck(write: [URL]) throws -> [OutboxEvent] {
+        try outbox.acknowledged(write: write).filter { try entryToMark($0) != nil }
+    }
+
     /// Look on `relays` for a version this row didn't base on. Relays that
     /// answer are crossed off the row's re-check list; any unbased version
-    /// stops the row and makes the day a conflict.
-    private func recheck(_ row: OutboxEvent, relays: [URL], write: [URL], summary: inout Summary) async throws {
-        guard !relays.isEmpty else { return }
+    /// stops the row and makes the day a conflict. Returns false when the
+    /// check never ran to the end (cancelled, or the account or store
+    /// changed while the relays answered): nothing may be marked synced
+    /// on it.
+    @discardableResult
+    private func recheck(_ row: OutboxEvent, relays: [URL], write: [URL], summary: inout Summary) async throws -> Bool {
+        guard !relays.isEmpty else { return true }
         let fetched = await fetchDay(row.dateString, from: relays)
-        guard isCurrent(), !Task.isCancelled else { return }
+        guard isCurrent(), !Task.isCancelled else { return false }
         let own = try outbox.ownEventIds(dateString: row.dateString)
         if let unbased = DeliveryRules.unbased(day: row.dateString, owner: owner, baseEventId: row.baseEventId,
                                                baseCreatedAt: row.baseCreatedAt, ownEventIds: own,
                                                events: fetched.events, checkDeletions: row.kind == DailyEntry.kind) {
             try stop(row, remote: unbased, fetched: fetched)
             summary.conflicts += 1
-            return
+            return true
         }
         row.recheckRelays = row.recheckRelays.filter { fetched.outcomes[$0] != .answered }
         try context.save()
+        return true
     }
 
     /// Never send this row again; the day is a conflict with both texts kept.
@@ -241,11 +290,18 @@ struct PublishPass {
         return try context.fetch(d).first
     }
 
-    private func markSynced(_ row: OutboxEvent) throws {
+    /// The entry `markSynced` would base on this row, if any: unchanged
+    /// since the row was signed and still pending.
+    private func entryToMark(_ row: OutboxEvent) throws -> JournalEntry? {
         guard let entry = try entry(row.dateString), entry.syncState == .localOnly,
-              entry.updatedAt == row.entryUpdatedAt else { return }
+              entry.updatedAt == row.entryUpdatedAt else { return nil }
         // A revived day's kind 5 is synced, but its entry waits on the 36669.
-        if row.kind == 5, entry.deletedAt == nil { return }
+        if row.kind == 5, entry.deletedAt == nil { return nil }
+        return entry
+    }
+
+    private func markSynced(_ row: OutboxEvent) throws {
+        guard let entry = try entryToMark(row) else { return }
         entry.syncStateRaw = SyncState.synced.rawValue
         if row.kind == DailyEntry.kind {
             entry.remoteEventID = row.eventId

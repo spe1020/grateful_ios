@@ -69,4 +69,14 @@ enum SyncLog {
             return "\(url.host ?? "?")=\(name)"
         }.joined(separator: " ")
     }
+
+    /// Sockets dialed and dropped per relay in one pass, with the HTTP status
+    /// of each dropped socket's handshake (a number, e.g. 429; 101 means the
+    /// upgrade had succeeded).
+    static func describe(_ stats: [URL: SharedConnections.Stats]) -> String {
+        stats.sorted { $0.key.absoluteString < $1.key.absoluteString }.map { url, st in
+            let codes = st.handshakeStatuses.isEmpty ? "" : " http \(st.handshakeStatuses.map(String.init).joined(separator: ","))"
+            return "\(url.host ?? "?")=dials \(st.dials) drops \(st.drops)\(codes)"
+        }.joined(separator: " ")
+    }
 }

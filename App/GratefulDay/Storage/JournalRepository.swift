@@ -193,10 +193,13 @@ struct JournalRepository {
         Set(try otherAccountReflections(from: start, through: end).map(\.dateString))
     }
 
-    /// Days with another account's reflection (Prep: "N earlier reflections
-    /// from another account are kept on this iPhone").
-    func otherAccountDayCount() throws -> Int {
-        Set(try otherAccountReflections().map(\.dateString)).count
+    /// Reflections (rows) another account has on this iPhone, for "N earlier
+    /// reflections from another account are kept on this iPhone" and the
+    /// Remove screen. Rows, not dates: two accounts on one date are two
+    /// reflections (Prep 117e6792, Chief P172). Calendar marking stays
+    /// date-based (`otherAccountDates`).
+    func otherAccountReflectionCount() throws -> Int {
+        try otherAccountReflections().count
     }
 
     /// Every reflection on this iPhone, any owner (for "Remove account and
