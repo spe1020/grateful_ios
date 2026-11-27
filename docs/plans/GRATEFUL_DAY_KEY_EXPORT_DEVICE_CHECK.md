@@ -7,11 +7,11 @@ created: 2026-11-25
 
 **Seth runs this on a spare physical device. Not yet run. No Simulator result counts.** About 45 minutes. Requested by Chief. Covers the device-only parts of key export r3 §1.7, plus Audit's screen-mirroring item.
 
-> ## ⚠ Not ready to run: no build is named yet
+> ## Build: `0e37103`
+> This is `main` after #40 merged. Its files are identical to `357612a`, the head Audit passed (same Git tree, `7462a48`). Check out this commit, not a later `main`.
 > Seth ruled B option 1 (8a3b1c2b): the app no longer clears the clipboard on hide; the 60 s expiry is the only clearing.
-> - **Build:** the export commit Chief names **after** Audit's check of the change. Record it here: `________`. **Don't run this on `cfd6097`** (draft PR #40): it still clears the clipboard on hide, so check A would fail.
 
-Screen text and behaviour were read from source at `cfd6097`; the clipboard steps describe that code **without** its clear-on-hide function. Recheck against the named build.
+Screen text was rechecked against source at `0e37103`. The export code there writes to the clipboard with a 60 s expiry and has no clear-on-hide.
 
 ## Safety
 - **These steps copy, show and paste a real private key, so use only a new throwaway.** Never your real key. Create it in the app (below), use it for nothing else, and **retire it afterwards.**
@@ -55,7 +55,7 @@ Screen text and behaviour were read from source at `cfd6097`; the clipboard step
 First, in the other client, return to its empty secret-key login field (log out of the throwaway if you need to).
 1. **Expiry:** open Screen 3, **Copy journal key**, start the timer, switch to the other client and **don't paste** until **75 seconds**. Long-press the empty field.
    - No **Paste** offered: PASS. If **Paste** is offered, tap it: the field stays empty: PASS; the field fills with hidden characters or the key: **FAIL** (don't log in; clear the field).
-2. **A newer copy survives:** have two things ready: a web page on the device that shows the word "banana" (any search result or article; copying it must not mean typing or saving it anywhere), and the other client's **empty** secret-key login field. Copy the key in Grateful Day and start the timer. Within 15 seconds, select and copy "banana" on that page. Return to Grateful Day, then go to the Home Screen. At 75 seconds from the key copy, go to the other client's empty secret-key field, long-press and tap **Paste**. **Paste nowhere else**, and don't log in. The field may hide what it shows: use its reveal control only if the content is short enough to be "banana" (6 characters). Never reveal anything longer.
+2. **A newer copy survives:** have two things ready: a web page on the device that shows the word "banana" (any search result or article; copying it must not mean typing or saving it anywhere), and the other client's **empty** secret-key login field. Copy the key in Grateful Day and start the timer. Within 15 seconds, double-tap "banana" on that page to select it, and copy it. (A drag selection can pick up a space or punctuation, which makes it more than 6 characters.) Return to Grateful Day, then go to the Home Screen. At 75 seconds from the key copy, go to the other client's empty secret-key field, long-press and tap **Paste**. **Paste nowhere else**, and don't log in. The field may hide what it shows: use its reveal control only if the content is short enough to be "banana" (6 characters). Never reveal anything longer.
    - **PASS:** "banana" fills the field.
    - **FAIL:** the key, or long hidden text, fills it. Don't reveal it or log in; clear the field.
    - **FAIL:** **Paste** isn't offered, or nothing is pasted: the newer copy was wiped.
