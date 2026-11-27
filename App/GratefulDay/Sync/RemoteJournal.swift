@@ -17,19 +17,44 @@ enum RemoteDay: Equatable {
 enum RemoteJournal {
     /// Per-day remote state from fetched events: only the owner's valid 36669s,
     /// newest per `d` (ties: lowest id), with the owner's kind 5s applied.
-    static func days(from events: [NostrEvent], owner pubkey: String, privateKey: Data) -> [String: RemoteDay] {
+    ///
+    /// D7 (Chief f98fa116): a kind 5 is positive evidence on its own. Relays
+    /// that honour NIP-09 drop the 36669 it covers, so a day can be held as
+    /// a tombstone with no 36669 beside it; that day is `.deleted` too. A
+    /// missing 36669 by itself still means nothing (no entry for the day).
+    /// - Rule 1: only the owner's own, valid kind 5s, through an `a` tag that
+    ///   is exactly `36669:<owner>:<day>` (`EntryDeletion.tombstones`).
+    /// - Rule 2: the tombstone's `created_at` is the deletion time; versions
+    ///   after it survive here, and the importer's ordering and pending-edit
+    ///   rules decide for local copies (`RemoteImporter`, §7 review).
+    /// - Rule 3: a kind 5 with no `a` tag at all acts only on a day whose
+    ///   local copy is based on exactly the event it names (`localBases`,
+    ///   day → recorded remote event id), and only while no other version of
+    ///   that day is on the relays.
+    static func days(from events: [NostrEvent], owner pubkey: String, privateKey: Data,
+                     localBases: [String: String] = [:]) -> [String: RemoteDay] {
         let entries = events.filter { DailyEntry.isValid($0, owner: pubkey) }
-        let tombstones = EntryDeletion.tombstones(from: events, owner: pubkey)
+        let deletions = events.filter { $0.kind == 5 && $0.pubkey == pubkey && $0.isValid }
+        let tombstones = EntryDeletion.tombstones(from: deletions, owner: pubkey)
+        let latestPerDay = DailyEntry.latestPerDay(entries)
+        let prefix = EntryDeletion.address(pubkey: pubkey, dateString: "")
         var out: [String: RemoteDay] = [:]
-        for (d, latest) in DailyEntry.latestPerDay(entries) {
+
+        /// The `.deleted` for an address tombstone: `by` is every kind 5 at
+        /// that deletion time naming the address (the importer's own-outbox
+        /// skip and D5's recorded id both need it).
+        func deleted(_ d: String) -> RemoteDay? {
+            let address = EntryDeletion.address(pubkey: pubkey, dateString: d)
+            guard let at = tombstones[address] else { return nil }
+            let ids = deletions.filter {
+                $0.createdAt == at && $0.tags.contains { $0.count >= 2 && $0[0] == "a" && $0[1] == address }
+            }.map(\.id)
+            return .deleted(at: at, by: Set(ids))
+        }
+
+        for (d, latest) in latestPerDay {
             if EntryDeletion.isDeleted(latest, tombstones: tombstones) {
-                let address = EntryDeletion.address(pubkey: pubkey, dateString: d)
-                let at = tombstones[address] ?? latest.createdAt
-                let ids = events.filter {
-                    $0.kind == 5 && $0.pubkey == pubkey && $0.createdAt == at
-                        && $0.tags.contains { $0.count >= 2 && $0[0] == "a" && $0[1] == address }
-                }.map(\.id)
-                out[d] = .deleted(at: at, by: Set(ids))
+                out[d] = deleted(d)
                 continue
             }
             if DailyEntry.isPrivate(latest) {
@@ -42,6 +67,26 @@ enum RemoteJournal {
             } else {
                 out[d] = .entry(text: EntryNotes.normalize(latest.content), isPrivate: false, eventId: latest.id,
                                 createdAt: latest.createdAt, event: latest)
+            }
+        }
+
+        // Tombstone-only days (rule 4): the address names the day.
+        for address in tombstones.keys {
+            let d = String(address.dropFirst(prefix.count))
+            if out[d] == nil, latestPerDay[d] == nil { out[d] = deleted(d) }
+        }
+
+        // Rule 3: `e`-only kind 5s, matched on the recorded event id only.
+        guard !localBases.isEmpty else { return out }
+        let dayByBase = Dictionary(localBases.map { ($0.value, $0.key) }, uniquingKeysWith: { a, _ in a })
+        for k5 in deletions where !k5.tags.contains(where: { $0.count >= 2 && $0[0] == "a" }) {
+            for tag in k5.tags where tag.count >= 2 && tag[0] == "e" {
+                guard let d = dayByBase[tag[1]] else { continue }
+                // Another version of the day is on the relays: this kind 5
+                // names only the old one, so it says nothing about the day.
+                if let latest = latestPerDay[d], latest.id != tag[1] { continue }
+                if case .deleted(let at, _)? = out[d], at >= k5.createdAt { continue }
+                out[d] = .deleted(at: k5.createdAt, by: [k5.id])
             }
         }
         return out
