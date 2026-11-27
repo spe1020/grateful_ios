@@ -22,6 +22,10 @@ struct GratefulDayApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                #if DEBUG
+                // D2: UI tests open the conflict screen on seeded data (Debug only).
+                .uiTestConflictFixture(arguments: ProcessInfo.processInfo.arguments)
+                #endif
                 .environment(store)
                 .environment(reminder)
                 .environment(account)

@@ -113,7 +113,7 @@ final class AppShellUITests: XCTestCase {
         let app = Self.app()
         app.launch()
         XCTAssertTrue(app.textViews["today.editor"].waitForExistence(timeout: 10))
-        // P59: one plain audit with Today scrolled to its end (its only
+        // P59: the audit runs with Today scrolled to its end (its only
         // exemption is P60/P62's, below),
         // where "On this iPhone only" must sit fully above the floating tab
         // bar. The pill is measured by its buttons: `tabBars.firstMatch`'s
@@ -122,22 +122,61 @@ final class AppShellUITests: XCTestCase {
         let footer = app.staticTexts["On this iPhone only"].firstMatch
         XCTAssertTrue(footer.exists)
         Self.logLayout(app, "at launch")
-        // Drag in the left margin, where nothing can be pressed, until the
-        // date stops moving: the end of the content.
         let window = app.windows.firstMatch
-        for _ in 0..<4 {
-            let before = date.frame
-            let start = window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 8, dy: window.frame.height * 0.7))
-            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -400)))
-            Self.waitUntilStill(date)
-            if date.frame == before { break }
-        }
+        Self.scrollToEnd(app)
         Self.logLayout(app, "at the end")
+        // P59, checked at rest: at the end of the content, with nothing
+        // dragged, the footer sits fully above the tab bar. If it doesn't,
+        // that is an app layout defect, not test timing.
+        let barTop = Self.tabBarTop(app)
+        let atRest = XCTAttachment(screenshot: app.screenshot())
+        atRest.name = "Today at rest at the end"
+        atRest.lifetime = .keepAlways
+        add(atRest)
+        guard footer.frame.maxY <= barTop else {
+            XCTFail("app layout: at the at-rest end of Today the footer (maxY \(footer.frame.maxY)) is under the tab bar (top \(barTop))")
+            return
+        }
+        // P140: at the very end, a text line can sit half above the top
+        // edge (wisdom.author, CI run 45773428298), and the Xcode 26 audit
+        // reports a line cut by the screen edge as "Potentially inaccessible
+        // text" with no element. Text scrolled partly off the top is normal
+        // scroll state, not an app defect, so the audit runs at a settled
+        // end position instead: nudge the content back down in small slow
+        // drags until no static text straddles y=0. Fail closed if it never
+        // settles, rather than auditing a frame that can misfire.
+        // P146: a 20 pt nudge once moved the content 144 pt (CI run
+        // 46004022373), pushing the footer under the tab bar. A drag's
+        // distance doesn't bound the scroll, so each nudge is checked: one
+        // that leaves the footer under the bar is undone by scrolling back
+        // to the end, and the 12 attempts still bound the loop.
+        var settled = Self.textsStraddlingTop(app).isEmpty
+        for _ in 0..<12 where !settled {
+            let start = window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 8, dy: window.frame.height * 0.3))
+            start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 20)), withVelocity: .slow, thenHoldForDuration: 0.5)
+            Self.waitUntilStill(date)
+            print("A11Y-SETTLE date=\(date.frame.minY) footer=\(footer.frame.maxY) barTop=\(barTop) straddling=\(Self.textsStraddlingTop(app))")
+            if footer.frame.maxY > barTop {
+                print("A11Y-SETTLE overshoot: the footer went under the tab bar; back to the end")
+                Self.scrollToEnd(app)
+                continue
+            }
+            settled = Self.textsStraddlingTop(app).isEmpty
+        }
+        Self.logLayout(app, "settled for the audit")
+        let straddling = Self.textsStraddlingTop(app)
+        guard straddling.isEmpty, footer.frame.maxY <= barTop else {
+            XCTFail("no position near the end leaves every text line clear of the top edge with the footer above the tab bar (top \(barTop)): footer maxY \(footer.frame.maxY), straddling \(straddling)")
+            return
+        }
+        XCTAssertLessThan(date.frame.maxY, 0, "the audit still runs with Today scrolled down, content off the top")
+        XCTAssertLessThanOrEqual(footer.frame.maxY, Self.tabBarTop(app), "the footer is fully above the tab bar")
         let shot = XCTAttachment(screenshot: app.screenshot())
-        shot.name = "Today scrolled to the end"
+        shot.name = "Today at the audited position"
         shot.lifetime = .keepAlways
         add(shot)
-        XCTAssertLessThanOrEqual(footer.frame.maxY, Self.tabBarTop(app), "the footer is fully above the tab bar")
+        // One plain audit of every type. The only exemption is P60/P62's
+        // contrast skip inside the wisdom card.
         try app.performAccessibilityAudit { issue in
             Self.log(issue)
             return Self.isWisdomCardContrastFalsePositive(issue, app)
@@ -311,6 +350,29 @@ final class AppShellUITests: XCTestCase {
         return true
     }
 
+    /// Drags in the left margin, where nothing can be pressed, until the
+    /// date stops moving: the end of Today's content.
+    @MainActor
+    static func scrollToEnd(_ app: XCUIApplication) {
+        let date = app.staticTexts["today.date"]
+        let window = app.windows.firstMatch
+        for _ in 0..<4 {
+            let before = date.frame
+            let start = window.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 8, dy: window.frame.height * 0.7))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -400)))
+            waitUntilStill(date)
+            if date.frame == before { break }
+        }
+    }
+
+    /// P140: the static texts cut by the top edge of the screen.
+    @MainActor
+    static func textsStraddlingTop(_ app: XCUIApplication) -> [String] {
+        app.staticTexts.allElementsBoundByIndex
+            .filter { $0.exists && $0.frame.minY < 0 && $0.frame.maxY > 0 }
+            .map { "\($0.identifier.isEmpty ? "(no id)" : $0.identifier) \($0.frame)" }
+    }
+
     /// The top of the drawn tab bar, taken from its buttons (P59).
     @MainActor
     static func tabBarTop(_ app: XCUIApplication) -> CGFloat {
@@ -352,6 +414,47 @@ final class AppShellUITests: XCTestCase {
     /// Done on the keyboard, then wait until the keyboard has gone: a tab tap
     /// made while it is still animating away can be dropped (#23 CI run
     /// 45205166133, Chief P54). A wait for a known state, not a retry.
+    /// Key export §1.3/§1.7: the Advanced row appears once connected, opens
+    /// Screen 1 with Prep's copy, and Cancel goes back. Nothing here
+    /// authenticates, so no key is read. Signs out after.
+    func testExportRowOpensScreen1AndCancelGoesBack() {
+        let app = Self.app()
+        app.launch()
+        XCTAssertTrue(app.textViews["today.editor"].waitForExistence(timeout: 10))
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(app.buttons["settings.account"].waitForExistence(timeout: 10))
+        app.buttons["settings.account"].tap()
+        if app.buttons["account.signOut"].waitForExistence(timeout: 3) {
+            app.buttons["account.signOut"].tap()
+            app.buttons["signOut.confirm"].tap()
+        }
+        XCTAssertTrue(app.buttons["account.create"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["account.export"].exists, "not offered while signed out")
+        app.buttons["account.create"].tap()
+        app.buttons["Make a new key"].tap()
+        XCTAssertTrue(app.buttons["backup.no"].waitForExistence(timeout: 5))
+        app.buttons["backup.no"].tap()
+        app.buttons["Continue without backup"].tap()
+
+        let row = app.buttons["account.export"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "offered once connected")
+        row.tap()
+        XCTAssertTrue(app.staticTexts["Your journal key is your account"].waitForExistence(timeout: 5))
+        // Seth P165: the Save Password bullet is on Screen 1 (literal, so
+        // removing it from the copy fails here too).
+        let savePassword = app.staticTexts["If your browser offers to save your private key as a password, choose Not Now."]
+        if !savePassword.exists { app.swipeUp() }
+        XCTAssertTrue(savePassword.waitForExistence(timeout: 5), "Save Password bullet shown")
+        XCTAssertTrue(app.buttons["export.show"].exists)
+        XCTAssertFalse(app.staticTexts["export.key"].exists, "no key on Screen 1")
+        app.buttons["export.cancel"].tap()
+        XCTAssertTrue(app.buttons["account.signOut"].waitForExistence(timeout: 5), "back on Account")
+
+        app.buttons["account.signOut"].tap()
+        app.buttons["signOut.confirm"].tap()
+        XCTAssertTrue(app.buttons["account.usedBefore"].waitForExistence(timeout: 5), "signed out")
+    }
+
     static func dismissKeyboard(_ app: XCUIApplication) {
         app.buttons["today.keyboardDone"].tap()
         let gone = NSPredicate(format: "count == 0")

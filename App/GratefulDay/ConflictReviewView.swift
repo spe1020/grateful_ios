@@ -29,7 +29,9 @@ struct ConflictReviewView: View {
                             .foregroundStyle(GDColor.mutedForeground)
                             .fixedSize(horizontal: false, vertical: true)
                         if days.showsKeepBothForAll {
+                            // Borderless: only the button itself, not the whole row, takes the tap.
                             Button(ConflictCopy.keepBothForAll) { keepBothForAll() }
+                                .buttonStyle(.borderless)
                                 .frame(minHeight: 44)
                                 .accessibilityIdentifier("conflict.keepBothForAll")
                         }
@@ -99,24 +101,30 @@ struct ConflictReviewView: View {
 }
 
 /// One day: both texts, each labelled, the account's first, and the choice.
+/// Separate List rows: the texts, one per option, then the line (D2). With
+/// the options inside one row, a tap fired every option's button and the
+/// last one won.
 private struct ConflictRow: View {
     let item: ConflictReview.Item
     @Binding var choice: ConflictReview.Choice
 
     var body: some View {
-        VStack(alignment: .leading, spacing: GDSpacing.medium) {
-            if let day = TodayEditorModel.parse(item.dateString, timeZone: .current) {
-                Text(TodayView.title(for: day.day))
-                    .font(.headline)
-                    .foregroundStyle(GDColor.foreground)
-                    .accessibilityAddTraits(.isHeader)
+        Group {
+            VStack(alignment: .leading, spacing: GDSpacing.medium) {
+                if let day = TodayEditorModel.parse(item.dateString, timeZone: .current) {
+                    Text(TodayView.title(for: day.day))
+                        .font(.headline)
+                        .foregroundStyle(GDColor.foreground)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                LabelledText(label: ConflictCopy.yourAccount,
+                             text: item.kind == .deletedFromAccount ? ConflictCopy.deletedFromAccount : item.accountText,
+                             identifier: "conflict.account")
+                LabelledText(label: ConflictCopy.thisIPhone,
+                             text: item.kind == .deletedHere ? ConflictCopy.deletedHere : item.iPhoneText,
+                             identifier: "conflict.iPhone")
             }
-            LabelledText(label: ConflictCopy.yourAccount,
-                         text: item.kind == .deletedFromAccount ? ConflictCopy.deletedFromAccount : item.accountText,
-                         identifier: "conflict.account")
-            LabelledText(label: ConflictCopy.thisIPhone,
-                         text: item.kind == .deletedHere ? ConflictCopy.deletedHere : item.iPhoneText,
-                         identifier: "conflict.iPhone")
+            .padding(.vertical, GDSpacing.small)
             Picker(Self.title(item.defaultChoice), selection: $choice) {
                 ForEach(item.choices, id: \.self) { c in
                     Text(Self.title(c)).tag(c)
@@ -125,27 +133,29 @@ private struct ConflictRow: View {
             .pickerStyle(.inline)
             .labelsHidden()
             .accessibilityIdentifier("conflict.choice")
-            Text(line)
-                .font(GDFont.sectionLabel)
-                .foregroundStyle(GDColor.mutedForeground)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("conflict.choiceLine")
-            if choice == .keepBoth, item.keepBothTooLong {
-                Text(ConflictCopy.keepBothTooLong)
+            VStack(alignment: .leading, spacing: GDSpacing.medium) {
+                Text(line)
                     .font(GDFont.sectionLabel)
-                    .foregroundStyle(GDColor.foreground)
+                    .foregroundStyle(GDColor.mutedForeground)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("conflict.tooLong")
+                    .accessibilityIdentifier("conflict.choiceLine")
+                if choice == .keepBoth, item.keepBothTooLong {
+                    Text(ConflictCopy.keepBothTooLong)
+                        .font(GDFont.sectionLabel)
+                        .foregroundStyle(GDColor.foreground)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("conflict.tooLong")
+                }
+                if choice == .keepBoth, item.keepBothBecomesPrivate {
+                    Text(ConflictCopy.privateWins)
+                        .font(GDFont.sectionLabel)
+                        .foregroundStyle(GDColor.foreground)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("conflict.privateWins")
+                }
             }
-            if choice == .keepBoth, item.keepBothBecomesPrivate {
-                Text(ConflictCopy.privateWins)
-                    .font(GDFont.sectionLabel)
-                    .foregroundStyle(GDColor.foreground)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("conflict.privateWins")
-            }
+            .padding(.vertical, GDSpacing.small)
         }
-        .padding(.vertical, GDSpacing.small)
     }
 
     static func title(_ choice: ConflictReview.Choice) -> String {
@@ -215,7 +225,10 @@ private struct LabelledText: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             if !expanded, text.count > 280 || text.split(separator: "\n").count > 6 {
+                // Borderless: in a row with another text's Show all, a tap
+                // would otherwise fire both.
                 Button(ConflictCopy.showAll) { expanded = true }
+                    .buttonStyle(.borderless)
                     .font(GDFont.sectionLabel)
                     .frame(minHeight: 44)
                     .accessibilityHidden(true)
