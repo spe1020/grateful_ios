@@ -29,7 +29,7 @@ final class CalendarModel {
     private(set) var totalCount = 0
     private(set) var otherAccountDates: Set<String> = []
     private(set) var savingDates: Set<String> = []
-    private(set) var otherAccountDayCount = 0
+    private(set) var otherAccountReflectionCount = 0
 
     private let repository: JournalRepository
     private let today: () -> JournalDay
@@ -96,7 +96,7 @@ final class CalendarModel {
             totalCount = try repository.totalReflectionCount()
             otherAccountDates = try repository.otherAccountDates(from: first, through: last)
             savingDates = try repository.savingDates(from: first, through: last)
-            otherAccountDayCount = try repository.otherAccountDayCount()
+            otherAccountReflectionCount = try repository.otherAccountReflectionCount()
             loadState = .ready
         } catch {
             loadState = .readFailed

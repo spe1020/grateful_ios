@@ -319,9 +319,53 @@ final class AccountTests: XCTestCase {
         XCTAssertEqual(days["2026-11-10"]?.hasReflection, false)
         XCTAssertEqual(days["2026-11-12"]?.hasReflection, true)
         XCTAssertEqual(model.monthCount, 1, "another account's day never counts")
-        XCTAssertEqual(model.otherAccountDayCount, 1)
+        XCTAssertEqual(model.otherAccountReflectionCount, 1)
         XCTAssertEqual(try repo.otherAccountText(for: "2026-11-10"), "A's day")
         XCTAssertEqual(try repo.text(for: day("2026-11-10")), "", "not the editor's row")
+    }
+
+    /// Prep 117e6792 / Chief P172: the other-account count is rows, not
+    /// dates. Two other accounts on one date plus one on another date are 3
+    /// reflections on the Calendar line and on Remove; marking stays by date.
+    func testOtherAccountCountIsReflectionsNotDates() throws {
+        try insert("A", on: "2026-11-10", owner: "aa")
+        try insert("B", on: "2026-11-10", owner: "bb")
+        try insert("A again", on: "2026-11-11", owner: "aa")
+        try insert("mine", on: "2026-11-12", owner: "cc")
+        let repo = JournalRepository(context: context, activeOwner: "cc")
+        XCTAssertEqual(try repo.otherAccountReflectionCount(), 3, "rows, not the 2 dates")
+        let model = CalendarModel(repository: repo, today: { self.day("2026-11-21") })
+        XCTAssertEqual(model.otherAccountReflectionCount, 3)
+        XCTAssertEqual(AccountCopy.otherAccountKept(model.otherAccountReflectionCount),
+                       "3 earlier reflections from another account are kept on this iPhone.")
+        // Remove: the other-account number never exceeds the total.
+        XCTAssertEqual(try repo.allReflectionCount(), 4)
+        XCTAssertLessThanOrEqual(try repo.otherAccountReflectionCount(), try repo.allReflectionCount())
+        XCTAssertEqual(AccountCopy.removeIncludesOther(try repo.otherAccountReflectionCount()),
+                       "This includes 3 reflections from another account.")
+        // Calendar marking stays one per date.
+        XCTAssertEqual(try repo.otherAccountDates(from: "2026-11-01", through: "2026-11-30"), ["2026-11-10", "2026-11-11"])
+    }
+
+    /// The P170 run's data, signed out: A on 11-25 and 11-27, B on 11-25 and
+    /// 11-26. The Calendar line says 4 (it said 3 when it counted dates).
+    func testSignedOutCountMatchesP170Rows() throws {
+        for (date, owner) in [("2026-11-25", "aa"), ("2026-11-27", "aa"), ("2026-11-25", "bb"), ("2026-11-26", "bb")] {
+            try insert("x", on: date, owner: owner)
+        }
+        let repo = JournalRepository(context: context, activeOwner: nil)
+        let model = CalendarModel(repository: repo, today: { self.day("2026-11-27") })
+        XCTAssertEqual(AccountCopy.otherAccountKept(model.otherAccountReflectionCount),
+                       "4 earlier reflections from another account are kept on this iPhone.")
+        XCTAssertLessThanOrEqual(try repo.otherAccountReflectionCount(), try repo.allReflectionCount())
+    }
+
+    /// Prep fa77766 (P161): the two encryption claims cover private
+    /// reflections only, since public days are published as plaintext.
+    func testEncryptionCopyCoversPrivateReflectionsOnly() {
+        XCTAssertEqual(DisclosureCopy.encrypted, "Your private reflections are encrypted, so they can only be read with your key.")
+        XCTAssertEqual(DisclosureCopy.learnMoreIntro,
+                       "The words of your private reflections are encrypted. The dates and times you save or edit an entry can be seen by others.")
     }
 
     func testOtherAccountDaysNeverCountTowardMilestones() throws {

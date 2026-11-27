@@ -98,8 +98,8 @@ private struct CalendarContent: View {
                         .accessibilityIdentifier("calendar.monthCount")
                     Text(CalendarModel.totalCountText(model.totalCount))
                         .accessibilityIdentifier("calendar.totalCount")
-                    if model.otherAccountDayCount > 0 {
-                        Text(AccountCopy.otherAccountKept(model.otherAccountDayCount))
+                    if model.otherAccountReflectionCount > 0 {
+                        Text(AccountCopy.otherAccountKept(model.otherAccountReflectionCount))
                             .accessibilityIdentifier("calendar.otherAccountKept")
                     }
                 }

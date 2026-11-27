@@ -457,7 +457,7 @@ struct RemoveDataView: View {
         // Every reflection on this iPhone is removed and nothing syncs before
         // M5b, so all of them count; unreadable counts block the action.
         let all = repo.flatMap { try? $0.allReflectionCount() }
-        let other = repo.flatMap { try? $0.otherAccountDayCount() } ?? 0
+        let other = repo.flatMap { try? $0.otherAccountReflectionCount() } ?? 0
         let pubkey = markerPubkey
         let hasBackup = pubkey.map { account.hasBackup(for: $0) == true } ?? false
         ScrollView {
