@@ -9,7 +9,7 @@ created: 2026-11-25
 
 **Why:** Sous reports that in the Simulator, the import screen's own **Paste** button never filled the field and never showed **Allow Paste**, while the system edit menu's **Paste** worked from the same pasteboard. If the button also fails on a device, it's a real import defect (**D3**). If it works there, record a Simulator-only behaviour.
 
-Build: `10ae4d6`; record the commit. Read from source at `10ae4d6`: the button reads the pasteboard once. If it gets text, it fills the field and then clears the pasteboard, unless something newer was copied during the read. If it gets nothing, it changes nothing and shows no error.
+Build: `f040127`; record the commit. Read from source at `f040127`: the button reads the pasteboard once. If it gets text, it fills the field and then clears the pasteboard, unless something newer was copied during the read. If it gets nothing, it changes nothing and shows no error.
 
 ## Safety
 - **Run this whole check with VoiceOver off**, and don't combine it with the VoiceOver check. Audit saw the edit-menu **Paste** announce and log a full throwaway key in the Simulator with accessibility active under UI automation. VoiceOver off hasn't been shown to prevent that on a device, so **retire the key afterwards** and never use it for anything real. The VoiceOver risk (candidate D4) has its own sheet, `GRATEFUL_DAY_VOICEOVER_KEY_PASTE_DEVICE_CHECK.md`.
