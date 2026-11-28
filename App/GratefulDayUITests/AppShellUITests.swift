@@ -92,8 +92,20 @@ final class AppShellUITests: XCTestCase {
         // D8 (P208): the text reached the editor before the kill, so an empty
         // editor after relaunch is a lost save, not lost input. The check
         // counts toward the 0.9 s, so the kill still comes within ~1 s.
+        // P238: XCUITest can report the app idle while the last keystrokes
+        // are still being delivered (#59 run 46157669325 read "…morning li";
+        // the recording showed "…light" ~0.25 s later, and 60 local runs
+        // lost nothing, P236). So wait up to 0.8 s for the full text, then
+        // assert it exactly.
         let typed = Date()
-        XCTAssertEqual(editor.value as? String, "Grateful for the morning light", "typed text is in the editor before the kill")
+        let full = "Grateful for the morning light"
+        var value = editor.value as? String
+        while value != full, Date().timeIntervalSince(typed) < 0.8 {
+            Thread.sleep(forTimeInterval: 0.05)
+            value = editor.value as? String
+        }
+        print(String(format: "D8-WAIT full text after %.2f s", Date().timeIntervalSince(typed)))
+        XCTAssertEqual(value, full, "typed text is in the editor before the kill")
         Thread.sleep(forTimeInterval: max(0, 0.9 - Date().timeIntervalSince(typed)))
         app.terminate()
 
@@ -109,6 +121,19 @@ final class AppShellUITests: XCTestCase {
         app.terminate()
         app.launch()
         XCTAssertTrue(app.staticTexts["today.placeholder"].waitForExistence(timeout: 10), "deletion persisted")
+    }
+
+    /// P232: the audit-position guard rejects #56 run 46152640776 attempt
+    /// 2's position (footer maxY 777, buttons at 795, contrast misfire) and
+    /// accepts the position the passing runs audited (maxY 711). Pure
+    /// arithmetic on the logged frames; nothing is launched.
+    func testFooterMarginGuardRejectsTheMisfirePosition() {
+        XCTAssertFalse(Self.footerClearsTabBarEdge(footerMaxY: 777, barTop: 795), "run 2's audited position")
+        XCTAssertFalse(Self.footerClearsTabBarEdge(footerMaxY: 757, barTop: 795), "run 2's overshoot before it")
+        XCTAssertTrue(Self.footerClearsTabBarEdge(footerMaxY: 711, barTop: 795), "attempt 1's and main's audited position")
+        XCTAssertTrue(Self.footerClearsTabBarEdge(footerMaxY: 671, barTop: 795), "the at-rest end")
+        XCTAssertTrue(Self.footerClearsTabBarEdge(footerMaxY: 747, barTop: 795), "exactly the margin")
+        XCTAssertFalse(Self.footerClearsTabBarEdge(footerMaxY: 747.5, barTop: 795), "half a point inside the margin")
     }
 
     /// Audit M1 L2: system accessibility audit on Today (clipped text,
@@ -161,8 +186,8 @@ final class AppShellUITests: XCTestCase {
             start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 20)), withVelocity: .slow, thenHoldForDuration: 0.5)
             Self.waitUntilStill(date)
             print("A11Y-SETTLE date=\(date.frame.minY) footer=\(footer.frame.maxY) barTop=\(barTop) straddling=\(Self.textsStraddlingTop(app))")
-            if footer.frame.maxY > barTop {
-                print("A11Y-SETTLE overshoot: the footer went under the tab bar; back to the end")
+            if !Self.footerClearsTabBarEdge(footerMaxY: footer.frame.maxY, barTop: barTop) {
+                print("A11Y-SETTLE overshoot: the footer came within \(Self.auditFooterMargin) pt of the tab bar; back to the end")
                 Self.scrollToEnd(app)
                 continue
             }
@@ -170,12 +195,12 @@ final class AppShellUITests: XCTestCase {
         }
         Self.logLayout(app, "settled for the audit")
         let straddling = Self.textsStraddlingTop(app)
-        guard straddling.isEmpty, footer.frame.maxY <= barTop else {
-            XCTFail("no position near the end leaves every text line clear of the top edge with the footer above the tab bar (top \(barTop)): footer maxY \(footer.frame.maxY), straddling \(straddling)")
+        guard straddling.isEmpty, Self.footerClearsTabBarEdge(footerMaxY: footer.frame.maxY, barTop: barTop) else {
+            XCTFail("no position near the end leaves every text line clear of the top edge with the footer \(Self.auditFooterMargin) pt clear of the tab bar (top \(barTop)): footer maxY \(footer.frame.maxY), straddling \(straddling)")
             return
         }
         XCTAssertLessThan(date.frame.maxY, 0, "the audit still runs with Today scrolled down, content off the top")
-        XCTAssertLessThanOrEqual(footer.frame.maxY, Self.tabBarTop(app), "the footer is fully above the tab bar")
+        XCTAssertTrue(Self.footerClearsTabBarEdge(footerMaxY: footer.frame.maxY, barTop: Self.tabBarTop(app)), "the footer is fully clear of the tab bar's edge region")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "Today at the audited position"
         shot.lifetime = .keepAlways
@@ -380,6 +405,23 @@ final class AppShellUITests: XCTestCase {
         app.staticTexts.allElementsBoundByIndex
             .filter { $0.exists && $0.frame.minY < 0 && $0.frame.maxY > 0 }
             .map { "\($0.identifier.isEmpty ? "(no id)" : $0.identifier) \($0.frame)" }
+    }
+
+    /// P232: how far the footer's whole frame must stay above the tab bar's
+    /// buttons when the Today audit runs. The floating bar's shadow and
+    /// scroll-edge fade reach above its buttons: #56 run 46152640776
+    /// attempt 2 audited the footer with maxY 777, 18 pt above the buttons
+    /// (795), its frame's bottom rows were tinted (249,248,246) and the
+    /// contrast audit failed, although the text measures 5.40:1 on plain
+    /// background (Audit 3727bde0). Passing runs audit it 84 pt above. 48 pt
+    /// is more than twice the 18 pt that failed, and still leaves 36 pt
+    /// over the usual 84 pt position for a nudge to land in.
+    static let auditFooterMargin: CGFloat = 48
+
+    /// P232: the footer is clear of the tab bar's edge region, not just
+    /// above its buttons.
+    static func footerClearsTabBarEdge(footerMaxY: CGFloat, barTop: CGFloat) -> Bool {
+        footerMaxY <= barTop - auditFooterMargin
     }
 
     /// The top of the drawn tab bar, taken from its buttons (P59).
