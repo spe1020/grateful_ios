@@ -7,7 +7,7 @@ created: 2026-11-25
 
 Maintained by Ship. Simulator results and physical-device results are kept in separate tables and never substitute for each other.
 Baseline: iOS `edaafda`, web `2b15ce6` (#50). `edaafda` adds only the test-only #44 to `f040127`; #34 (merged 2026-11-27 17:41Z, as `1d364f8`) added these three documents only. `f040127` adds the release-blocker fixes #38 (interrupted publish), #41 (conflict and deletion pickers) and #42 (rewriting a day after its remote deletion), plus the test-only #35, to `10ae4d6`. **Of the results recorded below, only S3 iOS → web, S4–S6 and SO1–SO4 ran on `f040127`**; each keeps the build it ran on. Web #50 deployment: succeeded per Chief (run 45725870933, github-pages deployment 8072677523).
-iOS `main` has since moved to `a254289` (#46), with app changes that include key export (#40), connection reuse (#45) and the other-account count (#46). No scenario or device result here ran on it.
+iOS `main` has since moved to `a254289` (#46), with app changes that include key export (#40), connection reuse (#45) and the other-account count and private-only encryption wording (#46: the publishing sheet's encryption line and the Learn more intro now say "private reflections"). **S1 and S7 ran on `a254289`**; no other scenario result here, and no device result recorded with a build, ran on it. #47 (merged as `add904d`) changed only documents.
 Physical-device procedures: `GRATEFUL_DAY_ICLOUD_RECOVERY_RUN_SHEET.md`, `GRATEFUL_DAY_INTERRUPTED_SYNC_RUN_SHEET.md`.
 
 ## Evidence rule (handoff §4, for agent-run results)
@@ -16,14 +16,27 @@ Each result needs: iOS and web commit; event IDs and relay destinations for anyt
 ## A. Simulator (executor: Sous; independent review: Audit)
 | # | Scenario | iOS | Web | Event IDs / relays | Artefact | Result | Audit |
 |---|---|---|---|---|---|---|---|
-| S1 | Web → iOS private sync | | | | | not yet reported | |
+| S1 | Web → iOS private sync | `a254289` | `2b15ce6` | A's web kind 36669 `751bffda220086cee7f08c99e2edb14eba7bb12b01c213b62741c812dc736f96`, then web edit `7d5f3dbabfa901172a5cef317c76a2c37e91b2138ba2a3b9ec93b45fbc4dad30` (`d=2026-11-27`): each accepted by nos.lol and primal; nostr.wine refused (restricted). iOS published nothing | `RESEARCH/GRATEFUL_DAY_PHASE1_EVIDENCE/S1_S7_2026_11_27/` | **PASS** (Simulator) | PASS (d9fbe516) |
 | S2 | Create private on web, retrieve and decrypt on iOS | `10ae4d6` | `2b15ce6` | B's kind 36669 `ecf2617b6f872af600ff2bb45c69be2b624012bd539b6248ff6ed0888a69ae49` (`d=2026-11-27`): web sent to nos.lol and relay.nostr.net, both OK; Audit found it on both; not found on primal (EOSE); damus WebSocket error. Web also republished B's settings, kind 30078 `f32f2159`, to the same two | `RESEARCH/GRATEFUL_DAY_PHASE1_EVIDENCE/S2B_*` | **PASS** (Simulator; P143) | PASS (1d5aecab) |
 | S3 | Deletion propagation, kind 5 (this row records iOS → web only) | `f040127` | `2b15ce6` | B's kind 36669 `93cb3567ef472e53ae48d98bde6e001f7b7b8feaf50a8c3e0113d0490c319b62` (`d=2026-11-27`), then kind 5 `cc3ef0724dd5af404809a80f95adb272cf3e03f3c5ae759881330ec4932f4a8f`: each sent to nos.lol and relay.nostr.net, both OK. After the deletion, no 36669 for that day on those two, primal or nostr.wine. Web read: no note for that day | `RESEARCH/GRATEFUL_DAY_PHASE1_EVIDENCE/S3C_IOS_TO_WEB_*` | **PASS** (Simulator, iOS → web; P157) | PASS (025a2d8d) |
 | S4 | Switching between two disposable identities | `f040127` | not used | A → B → A; each import showed that account's npub. B didn't see A's text as its own. Probe while B was signed in: no A marker under B | `RESEARCH/GRATEFUL_DAY_PHASE1_EVIDENCE/S456_2026_11_27/` | **PASS** (Simulator) | PASS (6d0d9700) |
 | S5 | No cross-account read, modify or publish | `f040127` | not used | A's kind 36669 `483ab4a6f307ac9e1f7af4c4eec4305f0ae64bf31c249a0af84e87f31219300f`: nos.lol and primal OK; damus failed(send). Probes found A's markers under A only; B has no 36669 for 11-27 | `RESEARCH/GRATEFUL_DAY_PHASE1_EVIDENCE/S456_2026_11_27/` | **PASS** (Simulator) | PASS (6d0d9700) |
 | S6 | Guest journal and account adoption | `f040127` | not used | Guest text adopted by A; kind 36669 `a0f5ce12…` (`d=2026-11-27`): nos.lol and primal OK; damus failed(send). Later replaced by A's S5 write | `RESEARCH/GRATEFUL_DAY_PHASE1_EVIDENCE/S456_2026_11_27/` | **PASS** (Simulator) | PASS (6d0d9700) |
-| S7 | Conflict and set-aside preservation | | | | | not yet reported | |
+| S7 | Conflict and set-aside preservation | `a254289` | `2b15ce6` | B, `d=2026-11-27`. Web: base `6e5e147fb720d26f0f8fd66d2ed46be79d5b347f8c83c89109d8e9ce1f25ee66`, then edits `51387d1d9850dcd58960c081e2cdd419bb9bd270e664e95485731958a8a6300b` (R1; damus, nos.lol, primal OK), `6a1023b796e57005bd5ddce056bb0c5e51600300f6cf08fe1e5d99b9ad312907` (R2) and `9f4ec9d1fadbc11ca875f1bbdce21fb0d51df0b0cf9b9d2a3c4aa91e2fdca19e` (R3; damus, nos.lol, primal OK); base and R2 on nos.lol and primal. iOS sent `c0676ed5` (R1) and `f85a587f` (R2): nos.lol and primal OK, damus failed(connect). Nothing from iOS in R3 | `RESEARCH/GRATEFUL_DAY_PHASE1_EVIDENCE/S1_S7_2026_11_27/` | **PASS** (Simulator) | PASS (d9fbe516) |
 | S8 | Relay configuration stays with its identity | `10ae4d6` | no web commit reported | B kind 10002 `5a41a795` (setup). B's kind 36669 `4d73a0b0fdf283dd8a0954a926013182539d0f2bf18002013c583470fe21eff7` (`d=2026-11-26`): sent to nos.lol and relay.nostr.net, both OK; Audit found it on both; probed absent on primal (EOSE). damus: see note | `RESEARCH/GRATEFUL_DAY_PHASE1_EVIDENCE/S8_*` | **PASS** (Simulator; P138) | PASS: discovery interim (89450ce1), publish half (7bb5983f) |
+
+**S1 and S7 notes** (Sous 183359d9; Audit d9fbe516; S1 run `ebe1ae` 21:32:56–21:40:13Z, account A; S7 run `e835ae` 21:40:37–21:59:41Z, account B; new simulator "GD P1VAL2" and two new throwaway identities; the untracked live harness, sha256 `8914cb65…20dcfa`, copied into the evidence folder):
+- S1: iOS showed the web text, then the web edit without the old text, and signed nothing.
+- S1: after the web edit, iOS showed "Your reflection from November 27 was replaced by a version saved elsewhere. Your earlier text is in Set aside." The text set aside was web's own earlier version, never edited on that iPhone. **Expected behaviour** under Prep's ruling (e1f5316f, P185).
+- S7: in each round, iOS edited offline, web edited the account's version, then iOS went online and the conflict screen opened. The tapped option was the selected one each time.
+
+| Round | Choice | Today afterwards | Set aside |
+|---|---|---|---|
+| R1 | Keep both | The account's text, then the iPhone's | None |
+| R2 | Keep this iPhone's | The iPhone's text | The account's version (both notes) |
+| R3 | Keep your account's | The account's text | The iPhone's R3 text; R2's item still there |
+
+- Limits: Simulator only. "Offline" was the `-uiTestNoRelays` launch argument, not an OS-level offline. damus and nostr.band were mostly unreachable. The key scan didn't cover the host's unified log. Audit judged S1 and S7 against their titles and the evidence rule, since this sheet gives no further criteria for them.
 
 **S2 notes** (Sous 0ff12f7e, Audit 1d5aecab; synthetic marker, not journal text; no key imported, B was already signed in):
 - iOS showed the web-created marker in the Today editor. The relay content is nip44 ciphertext with no plaintext marker.
@@ -70,14 +83,14 @@ Measurement (§7, Sous): first sync of a 60-day guest backlog (run 2, test build
 
 Rerun after M (Sous fd9d352f; test build `b674194`, which is the #45 change on `1d364f8` plus the measurement harness; one run, Simulator): **60 of 60 days synced in 76.5 s**, 2 passes, and all 60 recorded event IDs fetched from both nos.lol and primal. damus refused the connection (HTTP 503). Audit checked the evidence, including its own relay fetch (79d5b042, `RESEARCH/GRATEFUL_DAY_M_PR45_AUDIT_2026_11_27.md`); artefacts `backlog-reuse-run1*`. M merged as #45 (`e8db7bd`). The run wasn't repeated on the merged commit.
 
-Executor status, 2026-11-27: throwaway identities are A `npub1h3pjhv…3nts2` and B `npub1t8293…fmxgef`. S2, S3 (iOS → web only), S4, S5, S6 and S8, plus SO1–SO4, are the formal results recorded here; rows marked "not yet reported" have no formal result in this sheet.
+Executor status, 2026-11-27: for S2–S6, S8 and SO1–SO4, the throwaway identities were A `npub1h3pjhv…3nts2` and B `npub1t8293…fmxgef`. S1 and S7 used two new ones: A `npub159u0ue…89xv3s` and B `npub1llzdck…yyvdqs`. S1–S8 and SO1–SO4 each have a formal result in this sheet; S3's row records iOS → web only. The results come from different builds, shown on each row.
 
 ## B. Physical devices (executor: Seth only)
 | ID | Test | Result | Date | Build | What was verified (Seth) | Further evidence |
 |---|---|---|---|---|---|---|
 | D1 | Private iOS → web interoperability | **PASS, user-verified** | 2026-11-25 | iPhone `25d7f06`; web production (commit inferred `9347018`, before #50; not confirmed by Seth) | Imported test identity C; private 2026-11-24 reflection published; 5 approved relays acknowledged; fresh private browser session on production, same identity; appeared without reload; decrypted and matched | **Not supplied:** screenshot, event ID, names of the 5 relays |
 | D2 | Light mode and layout | **PASS, user-verified** | 2026-11-25 | iPhone `25d7f06` (assumed same session as D1) | Today footer above floating tab bar; secondary text readable; Today, Calendar, Settings correct; dark-mode footer also passed | **Not supplied:** screenshots, device model, iOS version |
-| D3 | iCloud Keychain recovery (exit criterion 2) | **PASS, user-verified** | 2026-11-27 (reported) | not stated (sheet names `f040127`) | Seth's report (3459b698): "tested on second device and keychain restore passes" | **Not supplied:** which devices and whether either was the primary iPhone, setup (A or B), build, whether the npubs matched, whether the test reflection opened and matched, backup rows offered, screenshots (R1–R4 not itemized) |
+| D3 | iCloud Keychain recovery (exit criterion 2) | **PASS, user-verified** | 2026-11-27 (reported) | not stated (the recovery sheet named `f040127` when this was reported) | Seth's report (3459b698): "tested on second device and keychain restore passes" | **Not supplied:** which devices and whether either was the primary iPhone, setup (A or B), build, whether the npubs matched, whether the test reflection opened and matched, backup rows offered, screenshots (R1–R4 not itemized) |
 | D4 | Interrupted sync (background/foreground) | **not run** | | | | |
 
 The handoff doesn't require repeating D1 or D2. Missing evidence doesn't change their user-verified PASS. D1 and D2 ran on `25d7f06`, which predates #29. D1 is not evidence for web → iOS. D2 is not a VoiceOver or accessibility check.
