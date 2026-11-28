@@ -92,8 +92,20 @@ final class AppShellUITests: XCTestCase {
         // D8 (P208): the text reached the editor before the kill, so an empty
         // editor after relaunch is a lost save, not lost input. The check
         // counts toward the 0.9 s, so the kill still comes within ~1 s.
+        // P238: XCUITest can report the app idle while the last keystrokes
+        // are still being delivered (#59 run 46157669325 read "…morning li";
+        // the recording showed "…light" ~0.25 s later, and 60 local runs
+        // lost nothing, P236). So wait up to 0.8 s for the full text, then
+        // assert it exactly.
         let typed = Date()
-        XCTAssertEqual(editor.value as? String, "Grateful for the morning light", "typed text is in the editor before the kill")
+        let full = "Grateful for the morning light"
+        var value = editor.value as? String
+        while value != full, Date().timeIntervalSince(typed) < 0.8 {
+            Thread.sleep(forTimeInterval: 0.05)
+            value = editor.value as? String
+        }
+        print(String(format: "D8-WAIT full text after %.2f s", Date().timeIntervalSince(typed)))
+        XCTAssertEqual(value, full, "typed text is in the editor before the kill")
         Thread.sleep(forTimeInterval: max(0, 0.9 - Date().timeIntervalSince(typed)))
         app.terminate()
 
