@@ -405,26 +405,60 @@ final class AccountTests: XCTestCase {
 /// Seth's M5a requirement 3: a failed migration never replaces the journal.
 @MainActor
 final class MigrationFailureTests: XCTestCase {
-    @Model final class Unknown { var x: Int = 0; init() {} }
+    @Model final class Unknown {
+        var x: Int = 0
+        var text: String = ""
+        init(x: Int, text: String) { self.x = x; self.text = text }
+    }
 
+    /// M5a rule 3: a failed migration never replaces or changes the journal.
+    /// D10 (Audit's definition, Chief P214): "changes" means the data or the
+    /// file's identity, read through SQLite from copies, not raw bytes. A
+    /// byte difference with the same data is SQLite bookkeeping; it is
+    /// logged, never asserted.
     func testFailedMigrationLeavesTheStoreUntouched() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let location = StoreLocation(directory: root.appendingPathComponent("Store", isDirectory: true))
         _ = try location.prepare()
+        let storeURL = location.storeURL
         do {
-            // A store whose model matches no version in the migration plan.
+            // A store whose model matches no version in the migration plan,
+            // with two distinct rows for the data check to compare.
             let s = Schema([Unknown.self])
-            let c = try ModelContainer(for: s, configurations: ModelConfiguration(schema: s, url: location.storeURL, cloudKitDatabase: .none))
-            c.mainContext.insert(Unknown())
+            let c = try ModelContainer(for: s, configurations: ModelConfiguration(schema: s, url: storeURL, cloudKitDatabase: .none))
+            c.mainContext.insert(Unknown(x: 1, text: "first"))
+            c.mainContext.insert(Unknown(x: 2, text: "second"))
             try c.mainContext.save()
         }
-        let before = try Data(contentsOf: location.storeURL)
-        let store = JournalStore(location: location)
-        store.openIfPossible(protectedDataAvailable: true)
-        guard case .failed = store.state else { return XCTFail("expected the failed state, got \(store.state)") }
-        XCTAssertNil(store.container, "never an empty journal")
-        XCTAssertEqual(try Data(contentsOf: location.storeURL), before, "store file byte-for-byte unchanged")
+        // Setup finishes writing before "before" is taken: the container is
+        // gone, and its WAL is checkpointed into the main file and emptied.
+        try StoreSnapshot.checkpoint(storeURL: storeURL)
+        let walSize = (try? FileManager.default.attributesOfItem(atPath: StoreSnapshot.url(storeURL, "-wal").path)[.size] as? NSNumber)?.intValue ?? 0
+        XCTAssertEqual(walSize, 0, "setup's WAL is empty before the snapshot")
+        let before = try StoreSnapshot(storeURL: storeURL)
+        XCTAssertTrue(before.logical.contains { $0.hasPrefix("row ZUNKNOWN ") }, "the setup rows are in the dump")
+
+        do {
+            let store = JournalStore(location: location)
+            store.openIfPossible(protectedDataAvailable: true)
+            guard case .failed = store.state else { return XCTFail("expected the failed state, got \(store.state)") }
+            XCTAssertNil(store.container, "never an empty journal")
+        }
+        let after = try StoreSnapshot(storeURL: storeURL)
+
+        // Diagnostics: offsets and sizes only, never row text.
+        for suffix in StoreSnapshot.suffixes where before.bytes[suffix] != after.bytes[suffix] {
+            let a = before.bytes[suffix] ?? nil, b = after.bytes[suffix] ?? nil
+            let offsets = (a != nil && b != nil) ? StoreSnapshot.differingOffsets(a!, b!) : []
+            print("D10-BYTES file=journal.store\(suffix) before=\(a.map { "\($0.count)" } ?? "missing") after=\(b.map { "\($0.count)" } ?? "missing") offsets=\(offsets) headerOnly=\(!offsets.isEmpty && offsets.allSatisfy { $0 < 100 })")
+        }
+        print("D10-LOGICAL \(before.logical == after.logical ? "same" : "differ")")
+        print("D10-INODE \(before.inode == after.inode ? "same" : "differ")")
+
+        XCTAssertNotNil(after.inode, "the store file is still there")
+        XCTAssertEqual(after.inode, before.inode, "the store file is the same file, not a replacement")
+        XCTAssertTrue(after.logical == before.logical, "the journal's data is unchanged (schema, rows, Core Data metadata, user_version); not printed, so no row text reaches the log")
     }
 }
 
