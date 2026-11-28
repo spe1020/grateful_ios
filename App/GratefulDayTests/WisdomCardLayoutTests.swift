@@ -3,16 +3,20 @@ import SwiftUI
 import GratefulDayCore
 @testable import GratefulDay
 
-/// D9: "Carry it with you" must never be squeezed, whatever the day's
-/// passage. CI's text-clipped audit caught it only on dates whose card laid
-/// out tight (11-28, not 11-27), so this lays out the real Today card for
-/// every scheduled passage instead of today's alone.
+/// D9 and D11: no text on the Wisdom card may be squeezed below its full
+/// height, whatever the day's passage. CI's text-clipped audit caught D9 only
+/// on dates whose card laid out tight (11-28, not 11-27), so this lays out the
+/// real Today card for every scheduled passage instead of today's alone.
+///
+/// Sizes are read from the settled layout (Prep, P221): after the first pass
+/// the card resizes to its tallest page, and that later pass is where a text
+/// gets squeezed.
 @MainActor
 final class WisdomCardLayoutTests: XCTestCase {
-    /// Collects what the label reports while one card is laid out.
-    private final class Box: @unchecked Sendable { var size: CGSize? }
+    /// The last size each measured text reported while one card was laid out.
+    private final class Box: @unchecked Sendable { var sizes: [WisdomCardLayoutPart: CGSize] = [:] }
 
-    func testCarryItWithYouGetsItsFullHeightForEveryPassage() throws {
+    func testCardTextsGetTheirFullHeightForEveryPassage() throws {
         XCTAssertNotNil(DailyWisdom.library, "bundled")
         let zone = TimeZone(identifier: "UTC")!
         var calendar = Calendar(identifier: .gregorian)
@@ -29,10 +33,10 @@ final class WisdomCardLayoutTests: XCTestCase {
         }
         XCTAssertEqual(days.count, 465, "one full cycle of the schedule")
 
-        // Narrow, common and wide iPhones, at the sizes where the label wraps.
+        // Narrow, common and wide iPhones, at the sizes where these texts wrap.
         let cases: [(DynamicTypeSize, CGFloat)] = [(.accessibility5, 375), (.accessibility5, 402), (.accessibility5, 440), (.accessibility3, 375)]
         for (size, width) in cases {
-            var squeezed: [String] = []
+            var squeezed: [WisdomCardLayoutPart: [String]] = [.carryLabel: [], .sourceLink: []]
             for day in days {
                 let item = try XCTUnwrap(DailyWisdom.item(for: day))
                 let box = Box()
@@ -46,23 +50,41 @@ final class WisdomCardLayoutTests: XCTestCase {
                         .padding(.horizontal, GDSpacing.medium)
                 }
                 .dynamicTypeSize(size)
-                .environment(\.wisdomLabelLayout) { box.size = $0 }
+                .environment(\.wisdomCardLayout) { part, laidOut in box.sizes[part] = laidOut }
                 let window = UIWindow(frame: CGRect(x: 0, y: 0, width: width, height: 874))
                 window.rootViewController = UIHostingController(rootView: root)
                 window.makeKeyAndVisible()
                 window.layoutIfNeeded()
-                if box.size == nil { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+                // Let the card settle at its tallest page, then lay out again.
+                RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+                window.layoutIfNeeded()
                 window.isHidden = true
 
-                // Fails closed: a label that never reported counts as squeezed.
-                guard let laidOut = box.size else { squeezed.append("\(day.dateString) \(item.id) (no layout)"); continue }
-                let full = UIHostingController(rootView: Text("Carry it with you").font(GDFont.sectionLabel).dynamicTypeSize(size))
-                    .sizeThatFits(in: CGSize(width: laidOut.width, height: .greatestFiniteMagnitude)).height
-                if laidOut.height < full - 0.5 {
-                    squeezed.append("\(day.dateString) \(item.id) (\(laidOut.height) of \(full) pt)")
+                var expected: [(WisdomCardLayoutPart, Text)] = [
+                    (.carryLabel, Text("Carry it with you").font(GDFont.sectionLabel)),
+                ]
+                if let p = item.provenance, URL(string: p.url) != nil {
+                    expected.append((.sourceLink, Text(p.location).font(.caption).underline()))
+                }
+                for (part, text) in expected {
+                    // Fails closed: a text that never reported counts as squeezed.
+                    guard let laidOut = box.sizes[part] else {
+                        squeezed[part, default: []].append("\(day.dateString) \(item.id) (no layout)")
+                        continue
+                    }
+                    let full = UIHostingController(rootView: text.dynamicTypeSize(size))
+                        .sizeThatFits(in: CGSize(width: laidOut.width, height: .greatestFiniteMagnitude)).height
+                    if laidOut.height < full - 0.5 {
+                        squeezed[part, default: []].append("\(day.dateString) \(item.id) (\(laidOut.height) of \(full) pt)")
+                    }
                 }
             }
-            XCTAssertTrue(squeezed.isEmpty, "\(size) at \(Int(width)) pt: \"Carry it with you\" squeezed on \(squeezed.count) of \(days.count) days, first: \(squeezed.prefix(5).joined(separator: "; "))")
+            for (part, name) in [(WisdomCardLayoutPart.carryLabel, "\"Carry it with you\""), (.sourceLink, "the source link")] {
+                let hits = squeezed[part] ?? []
+                // Names every day that failed, so a run shows which passages hit.
+                for hit in hits { print("WISDOM-LAYOUT-SQUEEZED \(part) \(size) w=\(Int(width)) \(hit)") }
+                XCTAssertTrue(hits.isEmpty, "\(size) at \(Int(width)) pt: \(name) squeezed on \(hits.count) of \(days.count) days, first: \(hits.prefix(5).joined(separator: "; "))")
+            }
         }
     }
 }
