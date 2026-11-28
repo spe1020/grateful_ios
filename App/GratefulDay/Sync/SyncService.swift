@@ -115,6 +115,18 @@ final class SyncService {
         return Set(unreachableSince.filter { now.timeIntervalSince($0.value) < unreachableMemory }.keys)
     }
 
+    /// The owner's days and the relay event each local copy is based on
+    /// (D7 rule 3). Only the connected account's own rows.
+    static func localBases(owner: String, context: ModelContext) throws -> [String: String] {
+        let o: String? = owner
+        let rows = try context.fetch(FetchDescriptor<JournalEntry>(predicate: #Predicate {
+            $0.ownerPubkey == o && $0.remoteEventID != nil
+        }))
+        var out: [String: String] = [:]
+        for row in rows { if let id = row.remoteEventID { out[row.dateString] = id } }
+        return out
+    }
+
     /// When the last finished pass's earliest waiting row is due again.
     private(set) var nextRetryAt: Date?
 
@@ -304,7 +316,15 @@ final class SyncService {
         }
         relays = set
         settings = RemoteSettings.read(settingsResult.events, owner: owner, privateKey: secret)
-        let days = RemoteJournal.days(from: journal.events, owner: owner, privateKey: secret)
+        // D7 rule 3: an `e`-only kind 5 acts only on the day whose copy is
+        // based on exactly the event it names.
+        let localBases: [String: String]
+        do { localBases = try Self.localBases(owner: owner, context: context) } catch {
+            StorageLog.error("Reading local bases failed", error: error)
+            status = .failed
+            return
+        }
+        let days = RemoteJournal.days(from: journal.events, owner: owner, privateKey: secret, localBases: localBases)
         let summary: RemoteImporter.Summary
         do {
             summary = try RemoteImporter(context: context, owner: owner).apply(days)
