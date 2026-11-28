@@ -35,6 +35,7 @@ struct WisdomCard: View {
     let item: WisdomItem
     let isPinned: Bool
     let onReflect: () -> Void
+    @Environment(\.wisdomLabelLayout) private var reportLabelLayout
 
     var body: some View {
         VStack(alignment: .leading, spacing: GDSpacing.medium) {
@@ -83,9 +84,14 @@ struct WisdomCard: View {
             }
             Divider()
             VStack(alignment: .leading, spacing: GDSpacing.small) {
+                // D9: without its own vertical fixedSize this label was the
+                // one text the card could squeeze, cut to one line at the
+                // largest text sizes on some days.
                 Text("Carry it with you")
                     .font(GDFont.sectionLabel)
                     .foregroundStyle(GDColor.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGSize.self, of: { $0.size }) { reportLabelLayout?($0) }
                 Text(DailyWisdom.prompt(item))
                     .font(GDFont.body.weight(.medium))
                     .foregroundStyle(GDColor.foreground)
@@ -110,6 +116,13 @@ struct WisdomCard: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("wisdom.card")
     }
+}
+
+extension EnvironmentValues {
+    /// D9 test seam: reports the laid-out size of "Carry it with you", so a
+    /// test can check every passage at large text sizes. Nil in the app,
+    /// where it does nothing.
+    @Entry var wisdomLabelLayout: (@MainActor @Sendable (CGSize) -> Void)? = nil
 }
 
 /// The question pinned above the editor by "Reflect on this". Context only:
