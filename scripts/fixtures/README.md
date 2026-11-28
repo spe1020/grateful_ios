@@ -12,6 +12,10 @@ for tz in Pacific/Honolulu Pacific/Kiritimati UTC America/New_York Europe/London
 done   # then merge the /tmp/dates_*.json files into $F/web_dates.json as {"zones":[...]}
 npx vite-node $G/scripts/fixtures/gen.ts $G/Sources/GratefulDayCore/Resources/wisdom.json wisdom
 TZ=America/Chicago npx vite-node $G/scripts/fixtures/gen.ts $F/wisdom_samples.json wisdom-samples
+export GD_WEB_COMMIT=$(git rev-parse --short HEAD)   # recorded in the affirmation and guard files
+npx vite-node $G/scripts/fixtures/gen.ts $G/Sources/GratefulDayCore/Resources/affirmations.json affirmations
+TZ=America/Chicago npx vite-node $G/scripts/fixtures/gen.ts $F/affirmation_samples.json affirmation-samples
+npx vite-node $G/scripts/fixtures/gen.ts $G/App/GratefulDayTests/readers_guard.json readers-guard   # hashes only, no text
 node $G/scripts/fixtures/ids.mjs $G/Tests/NostrCoreTests/Resources/nostr_tools_cases.json
 ```
 
