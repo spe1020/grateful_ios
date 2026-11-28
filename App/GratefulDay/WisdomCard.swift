@@ -29,7 +29,7 @@ enum DailyWisdom {
     }
 }
 
-/// Today's wisdom: passage, attribution, Grateful Day's reading, and the
+/// Today's wisdom page of the Today card: passage, attribution, Grateful Day's reading, and the
 /// question, with "Reflect on this". Text is shown as written, never edited.
 struct WisdomCard: View {
     let item: WisdomItem
@@ -73,6 +73,7 @@ struct WisdomCard: View {
                     Text("A reading by Grateful Day")
                         .font(.caption)
                         .foregroundStyle(GDColor.foreground)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(reading)
                         .font(GDFont.body)
                         .foregroundStyle(GDColor.foreground)
@@ -104,12 +105,8 @@ struct WisdomCard: View {
                     .accessibilityIdentifier("wisdom.reflect")
             }
         }
-        .padding(GDSpacing.medium)
+        // The Today card draws the padding-less page inside its own background.
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: GDRadius.card, style: .continuous)
-                .fill(GDColor.secondary)
-        )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("wisdom.card")
     }

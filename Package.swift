@@ -21,7 +21,7 @@ let package = Package(
         .target(
             name: "GratefulDayCore",
             dependencies: ["NostrCore"],
-            resources: [.process("Resources/wisdom.json")]
+            resources: [.process("Resources/wisdom.json"), .process("Resources/affirmations.json")]
         ),
         .testTarget(
             name: "NostrCoreTests",
