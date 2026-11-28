@@ -5,10 +5,13 @@ import GratefulDayCore
 /// The state behind Today's editor: which day it writes to, what has been
 /// typed, and saving.
 ///
-/// - **Saves as you type.** Each change is saved after `saveDelay` (0.5 s)
-///   without further typing, and immediately when the app leaves the
-///   foreground, the device is about to lock, or the day changes. So at most
-///   the last 0.5 s of typing is unsaved if the app is killed.
+/// - **Saves as you type.** A change is saved at most `saveDelay` (0.5 s)
+///   after the first edit that isn't saved yet, even while typing goes on,
+///   and immediately when the app leaves the foreground, the device is about
+///   to lock, or the day changes. So at most the last 0.5 s of typing is
+///   unsaved if the app is killed (D8, Chief P208). A kill gives no notice,
+///   so this timer is the only save before one: it must never wait for a
+///   pause in typing.
 /// - **A failed save never loses text** (M2 #5, Audit M2 I1): `DraftBuffer`
 ///   keeps it and shows the message; the next change, foregrounding or unlock
 ///   retries.
@@ -47,13 +50,17 @@ final class TodayEditorModel {
     private let repository: JournalRepository
     private let now: () -> Date
     private var pendingSave: Task<Void, Never>?
+    private let sleep: @MainActor (Duration) async throws -> Void
 
     /// `save` replaces the repository write; tests use it to inject failures.
+    /// `sleep` replaces the save timer's wait; tests use it to control time.
     init(repository: JournalRepository, day: JournalDay, now: @escaping () -> Date = { .now },
-         save: ((String, JournalDay) throws -> Void)? = nil) {
+         save: ((String, JournalDay) throws -> Void)? = nil,
+         sleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.repository = repository
         self.day = day
         self.now = now
+        self.sleep = sleep
         self.draft = DraftBuffer { [unowned self] text in
             if let save {
                 try save(text, self.day)
@@ -117,18 +124,29 @@ final class TodayEditorModel {
 
     /// Save now (leaving the foreground, locking, midnight). Returns whether
     /// everything typed is on disk.
+    ///
+    /// A save that is waiting is cancelled only once the text is on disk
+    /// (D8, P208): if this returns early or the write fails, the waiting save
+    /// still runs. Nothing new is armed here, so a day that can't be written
+    /// doesn't retry in a loop (Audit a290daa9); the next edit, foreground or
+    /// unlock retries, as before.
     @discardableResult
     func flush() -> Bool {
-        pendingSave?.cancel()
-        pendingSave = nil
-        guard hasUnsavedChanges, isEditable else { return !hasUnsavedChanges }
-        if draft.commit() {
-            hasUnsavedChanges = false
-            checkMilestone()
-            checkReminderOffer()
+        guard hasUnsavedChanges else {
+            cancelPendingSave()
             return true
         }
-        return false
+        guard isEditable, draft.commit() else { return false }
+        cancelPendingSave()
+        hasUnsavedChanges = false
+        checkMilestone()
+        checkReminderOffer()
+        return true
+    }
+
+    private func cancelPendingSave() {
+        pendingSave?.cancel()
+        pendingSave = nil
     }
 
     /// Today has moved to `newDay` (midnight, or returning after days away).
@@ -189,19 +207,24 @@ final class TodayEditorModel {
 
     /// Delete the day's reflection (after the user confirmed).
     func deleteReflection() throws {
-        pendingSave?.cancel()
-        pendingSave = nil
+        cancelPendingSave()
         try repository.delete(day, now: now())
         draft.text = ""
         hasUnsavedChanges = false
     }
 
+    /// Arm the save timer for the first unsaved edit. Later edits don't
+    /// restart it: restarting on every keystroke meant nothing was saved
+    /// until typing paused, so a kill during steady typing, or a main-thread
+    /// stall past the delay, lost everything typed (D8).
     private func scheduleSave() {
-        pendingSave?.cancel()
+        guard pendingSave == nil else { return }
+        let sleep = sleep
         pendingSave = Task { [weak self] in
-            try? await Task.sleep(for: Self.saveDelay)
-            guard !Task.isCancelled else { return }
-            self?.flush()
+            try? await sleep(Self.saveDelay)
+            guard !Task.isCancelled, let self else { return }
+            self.pendingSave = nil
+            self.flush()
         }
     }
 

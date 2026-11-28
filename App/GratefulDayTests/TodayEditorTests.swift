@@ -184,4 +184,143 @@ final class TodayEditorFailureTests: XCTestCase {
         XCTAssertEqual(model.day, next)
         XCTAssertEqual(model.text, "")
     }
+
+    // MARK: - D8: the save timer (Chief P208)
+
+    private func day(_ dateString: String) -> JournalDay {
+        TodayEditorModel.parse(dateString, timeZone: zone)!
+    }
+
+    /// The save timer's wait, under the test's control: a sleep ends only
+    /// when `advance` passes its deadline, or when its task is cancelled.
+    @MainActor
+    private final class ManualSleeper {
+        private(set) var now: Duration = .zero
+        private var waiting: [(id: Int, deadline: Duration, resume: CheckedContinuation<Void, Error>)] = []
+        private var cancelled: Set<Int> = []
+        private var nextID = 0
+        var waitingCount: Int { waiting.count }
+
+        func sleep(_ duration: Duration) async throws {
+            let id = nextID; nextID += 1
+            let deadline = now + duration
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+                    if cancelled.contains(id) { c.resume(throwing: CancellationError()) } else { waiting.append((id, deadline, c)) }
+                }
+            } onCancel: {
+                Task { @MainActor in self.cancel(id) }
+            }
+        }
+
+        private func cancel(_ id: Int) {
+            cancelled.insert(id)
+            if let i = waiting.firstIndex(where: { $0.id == id }) { waiting.remove(at: i).resume.resume(throwing: CancellationError()) }
+        }
+
+        /// Move time on, end every sleep that is due, and let woken tasks run.
+        /// Tasks armed since the last call get to start (and so call `sleep`
+        /// at the current time) before time moves.
+        func advance(_ duration: Duration) async {
+            await settle()
+            now += duration
+            let due = waiting.filter { $0.deadline <= now }
+            waiting.removeAll { $0.deadline <= now }
+            for w in due { w.resume.resume() }
+            await settle()
+        }
+
+        /// Tasks run on the main actor once this one suspends; a short real
+        /// wait lets them (Task.yield alone wasn't enough).
+        func settle() async {
+            for _ in 0..<5 { try? await Task.sleep(for: .milliseconds(10)) }
+        }
+    }
+
+    /// D8: steady typing (an edit every 0.3 s for 2 s) is saved while it
+    /// goes on, at most 0.5 s after the first unsaved edit. Before the fix
+    /// every keystroke restarted the timer, so nothing was saved until
+    /// typing paused, and a kill (which gives no notice) lost all of it.
+    func testSteadyTypingIsSavedBeforeItPauses() async throws {
+        let repo = try makeRepo()
+        let sleeper = ManualSleeper()
+        let today = day("2026-11-21")
+        var saves: [(at: Duration, text: String)] = []
+        let model = TodayEditorModel(repository: repo, day: today, save: { text, day in
+            try repo.save(text: text, for: day)
+            saves.append((sleeper.now, text))
+        }, sleep: { try await sleeper.sleep($0) })
+
+        var typed = ""
+        for i in 0..<7 {          // edits at 0.0, 0.3, … 1.8 s
+            if i > 0 { await sleeper.advance(.milliseconds(300)) }
+            typed += "word\(i) "
+            model.edit(typed)
+        }
+        // At the last edit (1.8 s), earlier typing must already be on disk.
+        guard let first = saves.first else {
+            return XCTFail("nothing was saved while typing went on")
+        }
+        XCTAssertLessThanOrEqual(first.at, .milliseconds(600), "first save at most 0.5 s after the first edit (plus one 0.3 s step)")
+        XCTAssertEqual(first.text, "word0 word1 ", "the first save holds what was typed by 0.5 s")
+        XCTAssertFalse(try repo.text(for: today).isEmpty)
+        for pair in zip(saves, saves.dropFirst()) {
+            XCTAssertLessThanOrEqual(pair.1.at - pair.0.at, .milliseconds(600), "no gap of more than one step past 0.5 s between saves")
+        }
+
+        // After the last edit, the rest is saved within 0.5 s.
+        await sleeper.advance(.milliseconds(500))
+        XCTAssertEqual(try repo.text(for: today), EntryNotes.normalize(typed))
+        XCTAssertFalse(model.hasUnsavedChanges)
+        XCTAssertEqual(sleeper.waitingCount, 0, "no timer left armed once everything is saved")
+    }
+
+    /// D8 / P208 part 2: a flush whose write fails doesn't drop the save that
+    /// was waiting; that save still runs and gets the text on disk.
+    func testFailedFlushKeepsTheWaitingSave() async throws {
+        let repo = try makeRepo()
+        let sleeper = ManualSleeper()
+        var locked = true
+        let today = day("2026-11-21")
+        let model = TodayEditorModel(repository: repo, day: today, save: { text, day in
+            if locked { throw Locked() }
+            try repo.save(text: text, for: day)
+        }, sleep: { try await sleeper.sleep($0) })
+
+        model.edit("kept for later")
+        await sleeper.advance(.milliseconds(100))
+        XCTAssertFalse(model.flush(), "the write fails (for example, the device is locking)")
+        XCTAssertEqual(sleeper.waitingCount, 1, "the waiting save is still armed")
+
+        locked = false
+        await sleeper.advance(.milliseconds(400))
+        XCTAssertEqual(try repo.text(for: today), "kept for later", "the waiting save ran and saved")
+        XCTAssertFalse(model.hasUnsavedChanges)
+        XCTAssertNil(model.saveError)
+    }
+
+    /// Audit a290daa9: a save timer whose write fails doesn't re-arm itself,
+    /// so a day that can't be written isn't retried in a loop. The text stays
+    /// in the editor, and the next edit, foreground or unlock retries.
+    func testFailedTimerSaveDoesNotRetryInALoop() async throws {
+        let repo = try makeRepo()
+        let sleeper = ManualSleeper()
+        var attempts = 0
+        let today = day("2026-11-21")
+        let model = TodayEditorModel(repository: repo, day: today, save: { _, _ in
+            attempts += 1
+            throw Locked()
+        }, sleep: { try await sleeper.sleep($0) })
+
+        model.edit("can't be written yet")
+        for _ in 0..<5 { await sleeper.advance(.milliseconds(500)) }
+        XCTAssertEqual(attempts, 1, "one attempt, then no loop")
+        XCTAssertEqual(sleeper.waitingCount, 0)
+        XCTAssertEqual(model.text, "can't be written yet")
+        XCTAssertTrue(model.hasUnsavedChanges)
+
+        model.edit("can't be written yet!")
+        await sleeper.advance(.milliseconds(500))
+        XCTAssertEqual(attempts, 2, "the next edit arms one new save")
+    }
 }
