@@ -47,15 +47,13 @@ struct StoreSnapshot {
     /// difference from the shorter end. Offsets only: never content.
     static func differingOffsets(_ a: Data, _ b: Data, limit: Int = 16) -> [Int] {
         var offsets: [Int] = []
-        let common = min(a.count, b.count)
-        a.withUnsafeBytes { pa in
-            b.withUnsafeBytes { pb in
-                var i = 0
-                while i < common && offsets.count < limit {
-                    if pa[i] != pb[i] { offsets.append(i) }
-                    i += 1
-                }
-            }
+        // Plain byte arrays: Xcode 26 finds a raw-buffer subscript here
+        // ambiguous (CI run 46105700272).
+        let x = [UInt8](a), y = [UInt8](b)
+        let common = min(x.count, y.count)
+        for i in 0..<common where x[i] != y[i] {
+            offsets.append(i)
+            if offsets.count == limit { break }
         }
         if offsets.count < limit && a.count != b.count { offsets.append(common) }
         return offsets
