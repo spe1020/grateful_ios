@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 import GratefulDayCore
 
 /// Today: the date, room for the day's wisdom (M4) and the editor, which
@@ -28,6 +29,8 @@ struct TodayView: View {
     /// launch once dismissed, and returns on the next while choices are open.
     @State private var showingConflicts = false
     @State private var conflictLineDismissed = false
+    /// The Today card's page, "YYYY-MM-DD|pageId" (device-local, not synced).
+    @AppStorage(TodayCardSelection.defaultsKey) private var storedCardPage = ""
 
     var body: some View {
         NavigationStack {
@@ -39,7 +42,7 @@ struct TodayView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("today.date")
-                        // VoiceOver order: date, passage, author, question, editor.
+                        // VoiceOver order: date, Today card, question, editor.
                         .accessibilitySortPriority(5)
 
                     if let editor, editor.showWelcomeBack {
@@ -50,11 +53,10 @@ struct TodayView: View {
                             .accessibilitySortPriority(4)
                     }
 
-                    if let wisdom = DailyWisdom.item(for: day) {
-                        WisdomCard(item: wisdom, isPinned: pinnedDay == day.dateString) {
-                            pinnedDay = day.dateString
-                        }
-                        .accessibilitySortPriority(3)
+                    let pages = cardPages
+                    if !pages.isEmpty {
+                        TodayCard(pages: pages, selection: cardSelection(pageIds: pages.map(\.id)))
+                            .accessibilitySortPriority(3)
                     }
 
                     if let wisdom = DailyWisdom.item(for: day), pinnedDay == day.dateString, editor != nil {
@@ -241,22 +243,34 @@ struct TodayView: View {
             editor?.retryIfReadFailed()
             editor?.flush()
         }
-        // Posted on an arbitrary thread: hop to main before touching @State.
-        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
+        // Midnight, a time-zone change or a clock change (spec 10a). Posted on
+        // an arbitrary thread: hop to main before touching @State.
+        .onReceive(TodayDayRefresh.publisher().receive(on: RunLoop.main)) { _ in
+            NSTimeZone.resetSystemTimeZone()
             refreshDay()
         }
     }
 
     private func refreshDay() {
-        let now = JournalDay(containing: .now)
-        guard now != day else { return }
-        guard let editor else {
-            day = now
-            return
-        }
-        editor.dayChanged(to: now)
-        // If saving to the old day failed, the editor stays on it, and so does Today.
-        day = editor.day
+        day = TodayDayRefresh.refresh(current: day, editor: editor, now: .now, timeZone: .current)
+    }
+
+    /// The Today card's pages, in fixed order: Wisdom, then Affirmation.
+    private var cardPages: [TodayCardPage] {
+        TodayCardPage.pages(
+            wisdom: DailyWisdom.item(for: day).map { wisdom in
+                AnyView(WisdomCard(item: wisdom, isPinned: pinnedDay == day.dateString) { pinnedDay = day.dateString })
+            },
+            affirmation: DailyAffirmation.text(for: day).map { AnyView(AffirmationPage(text: $0)) })
+    }
+
+    private func cardSelection(pageIds: [String]) -> Binding<String?> {
+        Binding(
+            get: { TodayCardSelection.page(stored: storedCardPage, today: day.dateString, pageIds: pageIds) },
+            set: { id in
+                guard let id else { return }
+                storedCardPage = TodayCardSelection.stored(today: day.dateString, pageId: id)
+            })
     }
 
     /// The date in the user's locale, e.g. "Saturday, November 21".
@@ -449,5 +463,33 @@ struct OtherAccountEntryView: View {
         }
         .background(GDColor.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// When Today re-checks the date, and what it moves to. The card and the
+/// editor share `TodayView.day`, so they always show the same day (spec 10a).
+enum TodayDayRefresh {
+    /// Midnight, a time-zone change, and a system clock change (Seth's
+    /// decision 3, 58d27316). All run the same existing day-change refresh.
+    static let notifications: [Notification.Name] = [
+        .NSCalendarDayChanged,
+        .NSSystemTimeZoneDidChange,
+        UIApplication.significantTimeChangeNotification,
+    ]
+
+    static func publisher(center: NotificationCenter = .default) -> AnyPublisher<Notification, Never> {
+        Publishers.MergeMany(notifications.map { center.publisher(for: $0) }).eraseToAnyPublisher()
+    }
+
+    /// The day Today shows after a refresh. With an editor, the editor saves
+    /// what's typed to the old day first; if that save fails it stays on the
+    /// old day, and so does Today (no text is lost or moved).
+    @MainActor
+    static func refresh(current: JournalDay, editor: TodayEditorModel?, now: Date, timeZone: TimeZone) -> JournalDay {
+        let today = JournalDay(containing: now, timeZone: timeZone)
+        guard today != current else { return current }
+        guard let editor else { return today }
+        editor.dayChanged(to: today)
+        return editor.day
     }
 }
