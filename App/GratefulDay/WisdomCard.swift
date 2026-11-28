@@ -35,7 +35,7 @@ struct WisdomCard: View {
     let item: WisdomItem
     let isPinned: Bool
     let onReflect: () -> Void
-    @Environment(\.wisdomLabelLayout) private var reportLabelLayout
+    @Environment(\.wisdomCardLayout) private var reportLayout
 
     var body: some View {
         VStack(alignment: .leading, spacing: GDSpacing.medium) {
@@ -59,10 +59,15 @@ struct WisdomCard: View {
                     Link(destination: url) {
                         // Body colour, underlined: the accent tint fails
                         // contrast on the card background.
+                        // D11: like every other text here, never squeezed
+                        // below its full height (two lines at the largest
+                        // sizes on narrow phones).
                         Text(p.location)
                             .font(.caption)
                             .underline()
                             .foregroundStyle(GDColor.foreground)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .onGeometryChange(for: CGSize.self, of: { $0.size }) { reportLayout?(.sourceLink, $0) }
                             .frame(minHeight: 44)
                             .contentShape(Rectangle())
                     }
@@ -91,7 +96,7 @@ struct WisdomCard: View {
                     .font(GDFont.sectionLabel)
                     .foregroundStyle(GDColor.foreground)
                     .fixedSize(horizontal: false, vertical: true)
-                    .onGeometryChange(for: CGSize.self, of: { $0.size }) { reportLabelLayout?($0) }
+                    .onGeometryChange(for: CGSize.self, of: { $0.size }) { reportLayout?(.carryLabel, $0) }
                 Text(DailyWisdom.prompt(item))
                     .font(GDFont.body.weight(.medium))
                     .foregroundStyle(GDColor.foreground)
@@ -118,11 +123,16 @@ struct WisdomCard: View {
     }
 }
 
+/// The WisdomCard texts a layout test measures (D9, D11).
+enum WisdomCardLayoutPart: Sendable {
+    case carryLabel, sourceLink
+}
+
 extension EnvironmentValues {
-    /// D9 test seam: reports the laid-out size of "Carry it with you", so a
-    /// test can check every passage at large text sizes. Nil in the app,
-    /// where it does nothing.
-    @Entry var wisdomLabelLayout: (@MainActor @Sendable (CGSize) -> Void)? = nil
+    /// D9/D11 test seam: reports the laid-out size of "Carry it with you"
+    /// and of the source link, so a test can check every passage at large
+    /// text sizes. Nil in the app, where it does nothing.
+    @Entry var wisdomCardLayout: (@MainActor @Sendable (WisdomCardLayoutPart, CGSize) -> Void)? = nil
 }
 
 /// The question pinned above the editor by "Reflect on this". Context only:
