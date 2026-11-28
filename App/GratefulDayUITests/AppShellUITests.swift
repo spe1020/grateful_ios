@@ -89,7 +89,12 @@ final class AppShellUITests: XCTestCase {
         clear(app)
         editor.tap()
         editor.typeText("Grateful for the morning light")
-        Thread.sleep(forTimeInterval: 0.9)
+        // D8 (P208): the text reached the editor before the kill, so an empty
+        // editor after relaunch is a lost save, not lost input. The check
+        // counts toward the 0.9 s, so the kill still comes within ~1 s.
+        let typed = Date()
+        XCTAssertEqual(editor.value as? String, "Grateful for the morning light", "typed text is in the editor before the kill")
+        Thread.sleep(forTimeInterval: max(0, 0.9 - Date().timeIntervalSince(typed)))
         app.terminate()
 
         app.launch()
