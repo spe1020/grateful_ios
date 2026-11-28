@@ -46,9 +46,9 @@ final class TombstoneOnlyDeletionTests: XCTestCase {
     }
 
     /// A kind 5 from another client that names only the event (`e`), no `a`.
-    private func eOnlyKind5(target: String, at: Int) throws -> NostrEvent {
+    private func eOnlyKind5(target: String, at: Int, key: Data? = nil) throws -> NostrEvent {
         try UnsignedEvent(kind: 5, tags: [["e", target], ["k", String(DailyEntry.kind)]], content: "")
-            .signed(privateKey: secret, createdAt: at)
+            .signed(privateKey: key ?? secret, createdAt: at)
     }
 
     /// An owner row based on `base` (`.synced`), as an import leaves it.
@@ -247,6 +247,31 @@ final class TombstoneOnlyDeletionTests: XCTestCase {
         await sync.run(owner: owner, secret: secret, context: context)
         XCTAssertNil(try row().deletedAt)
         XCTAssertEqual(try row().notesText, "kept")
+    }
+
+    /// M7 (Audit, #53): rule 1 holds for rule 3 too. An `e`-only kind 5
+    /// signed by someone else, naming exactly the local base, deletes
+    /// nothing. The address path is owner-checked in `EntryDeletion`, so
+    /// only the `deletions` owner filter guards this one.
+    func testAnotherAuthorsEOnlyKindFiveNamingTheLocalBaseIsIgnored() async throws {
+        let v = try remote("from another client", at: 100)
+        try syncedRow("from another client", base: v)
+        let forged = try eOnlyKind5(target: v.id, at: 200, key: otherSecret)
+        let sync = service(relays([forged]))
+        await sync.run(owner: owner, secret: secret, context: context)
+        let r = try row()
+        XCTAssertNil(r.deletedAt)
+        XCTAssertEqual(r.notesText, "from another client")
+        XCTAssertEqual(r.remoteEventID, v.id, "still based on the owner's event")
+        XCTAssertEqual(try archived(.replacedByRemote).count, 0)
+    }
+
+    /// M7 at the reader: `RemoteJournal.days` gives no entry for the day.
+    func testRemoteJournalIgnoresAnotherAuthorsEOnlyKindFive() throws {
+        let v = try remote("from another client", at: 100)
+        let forged = try eOnlyKind5(target: v.id, at: 200, key: otherSecret)
+        let days = RemoteJournal.days(from: [forged], owner: owner, privateKey: secret, localBases: [date: v.id])
+        XCTAssertNil(days[date])
     }
 
     /// An `e`-only kind 5 names one event; when a different version of the
